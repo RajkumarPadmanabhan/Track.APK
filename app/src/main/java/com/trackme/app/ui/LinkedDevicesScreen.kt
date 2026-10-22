@@ -63,7 +63,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun LinkedDevicesScreen(
     currentPlatforms: List<StaticSyncManager.PlatformExportItem> = emptyList(),
-    onOpenScanner: () -> Unit
+    onOpenScanner: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val activeSessions by WebSyncManager.activeSessions.collectAsState()
@@ -143,22 +143,25 @@ fun LinkedDevicesScreen(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (onOpenScanner != null) {
+                Button(
+                    onClick = onOpenScanner,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF8A80)),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Color.Black)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Scan QR", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
             Button(
-                onClick = onOpenScanner,
+                onClick = { showDialog = true },
                 modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF8A80)),
                 shape = RoundedCornerShape(14.dp)
             ) {
-                Icon(Icons.Default.QrCodeScanner, contentDescription = null, tint = Color.Black)
-                Spacer(modifier = Modifier.width(6.dp))
-                Text("Scan QR", color = Color.Black, fontWeight = FontWeight.Bold)
-            }
-            OutlinedButton(
-                onClick = { showDialog = true },
-                modifier = Modifier.weight(1f),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Text("Enter Code", color = Color.White)
+                Text("Enter Code", color = Color.Black, fontWeight = FontWeight.Bold)
             }
         }
         Spacer(modifier = Modifier.height(24.dp))

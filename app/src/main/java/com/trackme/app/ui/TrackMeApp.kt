@@ -231,8 +231,8 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
-            if (vm.screen == Screen.DETAIL || vm.screen == Screen.QR_SCANNER) {
-                if (showDetailNav && vm.screen == Screen.DETAIL) PillNav(tab) { tab = it }
+            if (vm.screen == Screen.DETAIL) {
+                if (showDetailNav) PillNav(tab) { tab = it }
             } else {
                 HomeNav(
                     selected = vm.screen,
@@ -249,12 +249,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                 Screen.PROFILE -> ProfileScreen(vm)
                 Screen.DETAIL -> DetailScreen(vm, tab)
                 Screen.LINKED_DEVICES -> LinkedDevicesScreen(
-                    currentPlatforms = remember(vm.accounts) { com.trackme.app.data.StaticSyncManager.exportAccounts(vm.accounts) },
-                    onOpenScanner = { vm.screen = Screen.QR_SCANNER }
-                )
-                Screen.QR_SCANNER -> QrScannerScreen(
-                    onPaired = { vm.screen = Screen.LINKED_DEVICES },
-                    onBack = { vm.screen = Screen.LINKED_DEVICES }
+                    currentPlatforms = remember(vm.accounts) { com.trackme.app.data.StaticSyncManager.exportAccounts(vm.accounts) }
                 )
             }
         }

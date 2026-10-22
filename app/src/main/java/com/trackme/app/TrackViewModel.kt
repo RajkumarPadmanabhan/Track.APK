@@ -34,7 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES, QR_SCANNER }
+enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES }
 
 class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
