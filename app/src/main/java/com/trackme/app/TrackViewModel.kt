@@ -151,6 +151,19 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    fun signInWithGoogleUser(user: com.trackme.app.auth.GoogleUserData): Boolean {
+        val e = user.email.trim().lowercase()
+        val name = user.displayName?.ifBlank { null } ?: nameFromEmail(e)
+        val avatar = user.profilePictureUri?.ifBlank { null }
+        val s = UserSession(e, name, avatar)
+        Store.saveUser(prefs, s)
+        session = s
+        accounts = Store.loadAccounts(prefs, e)
+        screen = Screen.HOME
+        refreshNote = null
+        return true
+    }
+
     fun signOut() {
         Store.saveUser(prefs, null)
         session = null

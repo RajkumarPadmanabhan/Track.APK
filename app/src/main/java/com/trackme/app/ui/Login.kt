@@ -2,6 +2,7 @@
 
 package com.trackme.app.ui
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,12 +34,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -50,10 +53,15 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.TrackViewModel
+import com.trackme.app.auth.GoogleAuthManager
+import kotlinx.coroutines.launch
 
 @Composable
 fun LoginScreen(vm: TrackViewModel) {
-    var showEmail by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var isSigningIn by remember { mutableStateOf(false) }
+    var fallbackEmailSheet by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Column(
@@ -88,17 +96,43 @@ fun LoginScreen(vm: TrackViewModel) {
             Spacer(Modifier.height(24.dp))
 
             Button(
-                onClick = { showEmail = true },
+                onClick = {
+                    if (!isSigningIn) {
+                        isSigningIn = true
+                        scope.launch {
+                            val result = GoogleAuthManager.signInWithGoogle(context)
+                            isSigningIn = false
+                            result.onSuccess { user ->
+                                Toast.makeText(context, "Welcome, ${user.displayName ?: user.email}!", Toast.LENGTH_SHORT).show()
+                                vm.signInWithGoogleUser(user)
+                            }.onFailure { error ->
+                                Toast.makeText(context, "Google Sign-In: ${error.localizedMessage ?: "Using fallback"}", Toast.LENGTH_SHORT).show()
+                                fallbackEmailSheet = true
+                            }
+                        }
+                    }
+                },
+                enabled = !isSigningIn,
                 modifier = Modifier.fillMaxWidth().height(58.dp),
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
             ) {
-                Box(
-                    Modifier.size(30.dp).clip(CircleShape).background(Color(0xFFF1F3F4)),
-                    contentAlignment = Alignment.Center,
-                ) { Text("G", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 18.sp) }
-                Spacer(Modifier.width(12.dp))
-                Text("Continue with Google", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                if (isSigningIn) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        strokeWidth = 2.5.dp,
+                        color = Color.Black
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Text("Signing in...", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                } else {
+                    Box(
+                        Modifier.size(30.dp).clip(CircleShape).background(Color(0xFFF1F3F4)),
+                        contentAlignment = Alignment.Center,
+                    ) { Text("G", color = Color(0xFF4285F4), fontWeight = FontWeight.Bold, fontSize = 18.sp) }
+                    Spacer(Modifier.width(12.dp))
+                    Text("Continue with Google", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+                }
             }
             Spacer(Modifier.height(12.dp))
             Text(
@@ -111,7 +145,7 @@ fun LoginScreen(vm: TrackViewModel) {
         }
     }
 
-    if (showEmail) EmailSheet(vm) { showEmail = false }
+    if (fallbackEmailSheet) EmailSheet(vm) { fallbackEmailSheet = false }
 }
 
 /** Three tilted sample cards, a preview of the home page. */
