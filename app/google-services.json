@@ -15,6 +15,14 @@
       },
       "oauth_client": [
         {
+          "client_id": "757771017613-35d48veltgtmjl2l6hdru787hg32la9c.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.trackme.app",
+            "certificate_hash": "b5f9dfff436541429958efdcb502c14524061198"
+          }
+        },
+        {
           "client_id": "757771017613-leg77sv2a0936n64afcnlh855jmd8qmr.apps.googleusercontent.com",
           "client_type": 3
         }
