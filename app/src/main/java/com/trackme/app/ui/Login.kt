@@ -1,5 +1,3 @@
-@file:OptIn(ExperimentalMaterial3Api::class)
-
 package com.trackme.app.ui
 
 import android.widget.Toast
@@ -13,23 +11,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,8 +36,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
@@ -61,7 +50,6 @@ fun LoginScreen(vm: TrackViewModel) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var isSigningIn by remember { mutableStateOf(false) }
-    var fallbackEmailSheet by remember { mutableStateOf(false) }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         Column(
@@ -106,8 +94,7 @@ fun LoginScreen(vm: TrackViewModel) {
                                 Toast.makeText(context, "Welcome, ${user.displayName ?: user.email}!", Toast.LENGTH_SHORT).show()
                                 vm.signInWithGoogleUser(user)
                             }.onFailure { error ->
-                                Toast.makeText(context, "Google Sign-In: ${error.localizedMessage ?: "Using fallback"}", Toast.LENGTH_SHORT).show()
-                                fallbackEmailSheet = true
+                                Toast.makeText(context, "Google Sign-In failed: ${error.localizedMessage ?: "Unknown error"}", Toast.LENGTH_LONG).show()
                             }
                         }
                     }
@@ -144,8 +131,6 @@ fun LoginScreen(vm: TrackViewModel) {
             )
         }
     }
-
-    if (fallbackEmailSheet) EmailSheet(vm) { fallbackEmailSheet = false }
 }
 
 /** Three tilted sample cards, a preview of the home page. */
@@ -182,51 +167,5 @@ private fun SampleCard(
         Text(label, color = Brand.Ink.copy(alpha = 0.65f), fontSize = 13.sp)
         Text(value, color = Brand.Ink, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
         Text(footer, color = Brand.Ink.copy(alpha = 0.7f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-    }
-}
-
-@Composable
-private fun EmailSheet(vm: TrackViewModel, onDismiss: () -> Unit) {
-    var email by remember { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }
-    val submit = {
-        if (!vm.signIn(email)) error = "Enter a valid email address, like name@gmail.com."
-    }
-
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color(0xFF111111),
-    ) {
-        Column(
-            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 32.dp).imePadding(),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Text("Enter your email", fontSize = 26.sp, fontWeight = FontWeight.Bold)
-            Text(
-                "Use the email you sign in to Google with. TrackMe creates your profile from it.",
-                fontSize = 14.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            OutlinedTextField(
-                value = email,
-                onValueChange = { email = it; error = null },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                shape = RoundedCornerShape(20.dp),
-                label = { Text("Email") },
-                placeholder = { Text("name@gmail.com") },
-                isError = error != null,
-                supportingText = { error?.let { msg -> Text(msg) } },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { submit() }),
-            )
-            Button(
-                onClick = { submit() },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Brand.Coral, contentColor = Color.Black),
-            ) { Text("Continue", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-        }
     }
 }
