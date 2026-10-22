@@ -14,7 +14,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Trackme">
         <activity
-            android:name=".MainActivity"
+            android:name="com.trackme.app.MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize|uiMode"
             android:windowSoftInputMode="adjustResize">
