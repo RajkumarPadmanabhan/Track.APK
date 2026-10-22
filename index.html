@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrackMe - All-in-One Social & Git Growth Tracker for Android</title>
+    <meta name="description" content="TrackMe is a native Android app to monitor all your social media platforms, developer repositories, and personal portfolio websites in real-time.">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚡</text></svg>">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0A0A0E;
+            --bg-card: #14141C;
+            --bg-card-hover: #1D1D28;
+            --accent-coral: #FF4D6D;
+            --accent-green: #00E676;
+            --accent-cyan: #00B0FF;
+            --accent-yellow: #FFDD00;
+            --text-primary: #F8FAFC;
+            --text-secondary: #94A3B8;
+            --border-color: rgba(255, 255, 255, 0.08);
+            --glass-bg: rgba(20, 20, 28, 0.7);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            overflow-x: hidden;
+            line-height: 1.6;
+        }
+
+        /* Ambient Glow Backgrounds */
+        .glow-1 {
+            position: fixed;
+            top: -10%;
+            left: -10%;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(255, 77, 109, 0.15) 0%, rgba(0,0,0,0) 70%);
+            z-index: -1;
+            pointer-events: none;
+            animation: pulseGlow 8s infinite alternate;
+        }
+
+        .glow-2 {
+            position: fixed;
+            bottom: -10%;
+            right: -10%;
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, rgba(0, 176, 255, 0.12) 0%, rgba(0,0,0,0) 70%);
+            z-index: -1;
+            pointer-events: none;
+            animation: pulseGlow 10s infinite alternate-reverse;
+        }
+
+        @keyframes pulseGlow {
+            0% { transform: scale(1) translate(0, 0); opacity: 0.7; }
+            100% { transform: scale(1.15) translate(30px, -20px); opacity: 1; }
+        }
+
+        /* Navbar */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            z-index: 1000;
+            background: rgba(10, 10, 14, 0.8);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 8%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text-primary);
+            font-weight: 800;
+            font-size: 1.4rem;
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, var(--accent-green), var(--accent-cyan));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            box-shadow: 0 4px 20px rgba(0, 230, 118, 0.3);
+        }
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 28px;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.95rem;
+            transition: all 0.2s ease;
+        }
+
+        .nav-links a:hover {
+            color: var(--text-primary);
+        }
+
+        .btn-download {
+            background: linear-gradient(135deg, var(--accent-coral), #FF758F);
+            color: #fff;
+            padding: 10px 22px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 0.95rem;
+            box-shadow: 0 4px 20px rgba(255, 77, 109, 0.35);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-download:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(255, 77, 109, 0.5);
+        }
+
+        /* Hero Section */
+        .hero {
+            padding: 160px 8% 80px;
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 60px;
+            align-items: center;
+            min-height: 90vh;
+        }
+
+        .badge-version {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(0, 230, 118, 0.12);
+            border: 1px solid rgba(0, 230, 118, 0.3);
+            color: var(--accent-green);
+            padding: 6px 16px;
+            border-radius: 50px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            margin-bottom: 24px;
+        }
+
+        .hero h1 {
+            font-size: 3.8rem;
+            font-weight: 800;
+            line-height: 1.15;
+            letter-spacing: -1.5px;
+            margin-bottom: 20px;
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, var(--accent-coral) 0%, #FFB703 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--text-secondary);
+            margin-bottom: 36px;
+            max-width: 580px;
+        }
+
+        .hero-actions {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 12px 26px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 700;
+            transition: all 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            background: var(--bg-card-hover);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Animated Phone Mockup / Floating Cards */
+        .mockup-container {
+            position: relative;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .card-stack {
+            position: relative;
+            width: 320px;
+            height: 420px;
+        }
+
+        .float-card {
+            position: absolute;
+            width: 260px;
+            padding: 20px;
+            border-radius: 24px;
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            animation: floatAnim 6s ease-in-out infinite alternate;
+        }
+
+        .float-card.c1 {
+            background: linear-gradient(135deg, #1A1A24, #2D1822);
+            top: 0;
+            left: 0;
+            transform: rotate(-6deg);
+            z-index: 3;
+        }
+
+        .float-card.c2 {
+            background: linear-gradient(135deg, #1A1A24, #142820);
+            top: 120px;
+            left: 60px;
+            transform: rotate(4deg);
+            animation-delay: -2s;
+            z-index: 2;
+        }
+
+        .float-card.c3 {
+            background: linear-gradient(135deg, #1A1A24, #122438);
+            top: 240px;
+            left: 10px;
+            transform: rotate(-3deg);
+            animation-delay: -4s;
+            z-index: 1;
+        }
+
+        .float-card:hover {
+            transform: scale(1.08) rotate(0deg) !important;
+            z-index: 10 !important;
+            box-shadow: 0 30px 60px rgba(255, 77, 109, 0.3);
+        }
+
+        @keyframes floatAnim {
+            0% { transform: translateY(0px) rotate(-6deg); }
+            100% { transform: translateY(-18px) rotate(-3deg); }
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .card-value {
+            font-size: 2.2rem;
+            font-weight: 800;
+            color: var(--text-primary);
+        }
+
+        .card-footer {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--accent-green);
+        }
+
+        /* Features Section */
+        .features {
+            padding: 100px 8%;
+            background: var(--bg-dark);
+        }
+
+        .section-title {
+            text-align: center;
+            margin-bottom: 60px;
+        }
+
+        .section-title h2 {
+            font-size: 2.5rem;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+
+        .section-title p {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 28px;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 32px;
+            border-radius: 28px;
+            transition: all 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card:hover {
+            background: var(--bg-card-hover);
+            transform: translateY(-6px);
+            border-color: rgba(255, 255, 255, 0.2);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+
+        .feature-icon {
+            width: 54px;
+            height: 54px;
+            border-radius: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.6rem;
+            margin-bottom: 20px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+        }
+
+        .feature-card h3 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .feature-card p {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        /* Release Changelog Section */
+        .updates {
+            padding: 100px 8%;
+            background: #0E0E14;
+            border-top: 1px solid var(--border-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .timeline {
+            max-width: 800px;
+            margin: 0 auto;
+            position: relative;
+        }
+
+        .timeline::before {
+            content: '';
+            position: absolute;
+            left: 20px;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: var(--border-color);
+        }
+
+        .timeline-item {
+            position: relative;
+            padding-left: 60px;
+            margin-bottom: 40px;
+        }
+
+        .timeline-dot {
+            position: absolute;
+            left: 11px;
+            top: 4px;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: var(--accent-coral);
+            box-shadow: 0 0 15px var(--accent-coral);
+            border: 4px solid var(--bg-dark);
+        }
+
+        .timeline-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 24px;
+            border-radius: 20px;
+        }
+
+        .timeline-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .version-tag {
+            background: rgba(255, 77, 109, 0.15);
+            color: var(--accent-coral);
+            padding: 4px 12px;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+
+        .release-date {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .timeline-body ul {
+            list-style-type: none;
+            margin-top: 10px;
+        }
+
+        .timeline-body li {
+            position: relative;
+            padding-left: 20px;
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+            margin-bottom: 6px;
+        }
+
+        .timeline-body li::before {
+            content: "•";
+            position: absolute;
+            left: 0;
+            color: var(--accent-cyan);
+            font-weight: bold;
+        }
+
+        /* Bug Report Modal & Section */
+        .feedback-section {
+            padding: 100px 8%;
+            text-align: center;
+        }
+
+        .feedback-card {
+            background: linear-gradient(135deg, #181822, #101016);
+            border: 1px solid var(--border-color);
+            padding: 50px 40px;
+            border-radius: 32px;
+            max-width: 800px;
+            margin: 0 auto;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.4);
+        }
+
+        .bug-form {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            margin-top: 24px;
+            text-align: left;
+        }
+
+        .bug-form input, .bug-form textarea, .bug-form select {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            padding: 14px 18px;
+            border-radius: 16px;
+            font-size: 0.95rem;
+            font-family: inherit;
+            outline: none;
+            transition: border-color 0.2s ease;
+        }
+
+        .bug-form input:focus, .bug-form textarea:focus, .bug-form select:focus {
+            border-color: var(--accent-coral);
+        }
+
+        .btn-submit {
+            background: var(--accent-coral);
+            color: #fff;
+            padding: 14px 28px;
+            border: none;
+            border-radius: 50px;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+
+        .btn-submit:hover {
+            opacity: 0.9;
+        }
+
+        /* Footer */
+        footer {
+            padding: 40px 8%;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+
+        footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-left: 16px;
+        }
+
+        footer a:hover {
+            color: var(--text-primary);
+        }
+
+        @media (max-width: 900px) {
+            .hero {
+                grid-template-columns: 1fr;
+                padding-top: 120px;
+                text-align: center;
+            }
+
+            .hero h1 {
+                font-size: 2.8rem;
+            }
+
+            .hero p {
+                margin: 0 auto 30px;
+            }
+
+            .hero-actions {
+                justify-content: center;
+            }
+
+            .mockup-container {
+                margin-top: 40px;
+            }
+
+            .nav-links {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="glow-1"></div>
+    <div class="glow-2"></div>
+
+    <!-- Navigation -->
+    <nav>
+        <a href="#" class="brand">
+            <div class="logo-icon">⚡</div>
+            <span>TrackMe</span>
+        </a>
+        <ul class="nav-links">
+            <li><a href="#features">Features</a></li>
+            <li><a href="#updates">Releases & Changelog</a></li>
+            <li><a href="#feedback">Bug Report</a></li>
+            <li><a href="http://buymeacoffee.com/rrajkumarpadmanabhan" target="_blank">☕ Support</a></li>
+        </ul>
+        <a href="https://github.com/RajkumarPadmanabhan/Track.APK/releases/download/v1.0.8/TrackMe-v1.0.8.apk" class="btn-download">
+            <span>Download APK</span>
+            <small>(v1.0.8)</small>
+        </a>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-content">
+            <div class="badge-version">
+                <span>🟢 TrackMe v1.0.8 Official Release</span>
+            </div>
+            <h1>Your Socials & Git Activity, <span class="gradient-text">Tracked Daily.</span></h1>
+            <p>Monitor your followers, subscribers, commits, and personalized social trends in real-time. Native, private, fast, and completely stored on your device.</p>
+            <div class="hero-actions">
+                <a href="https://github.com/RajkumarPadmanabhan/Track.APK/releases/download/v1.0.8/TrackMe-v1.0.8.apk" class="btn-download" style="padding: 14px 32px; font-size: 1.05rem;">
+                    📥 Download APK v1.0.8
+                </a>
+                <a href="https://github.com/RajkumarPadmanabhan/Track.APK" target="_blank" class="btn-secondary">
+                    ⭐ View on GitHub
+                </a>
+            </div>
+        </div>
+
+        <div class="mockup-container">
+            <div class="card-stack">
+                <div class="float-card c1">
+                    <div class="card-header">
+                        <span>GitHub Activity</span>
+                        <span style="color:#00E676;">GH</span>
+                    </div>
+                    <div class="card-value">24</div>
+                    <div class="card-footer">7-day commit streak 🔥</div>
+                </div>
+                <div class="float-card c2">
+                    <div class="card-header">
+                        <span>YouTube Subscribers</span>
+                        <span style="color:#FF4D6D;">YT</span>
+                    </div>
+                    <div class="card-value">3.2K</div>
+                    <div class="card-footer">+14 new today 📈</div>
+                </div>
+                <div class="float-card c3">
+                    <div class="card-header">
+                        <span>Instagram Growth</span>
+                        <span style="color:#FFDD00;">IG</span>
+                    </div>
+                    <div class="card-value">12.4K</div>
+                    <div class="card-footer">+128 today ✨</div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section class="features" id="features">
+        <div class="section-title">
+            <h2>Everything You Need in One Place</h2>
+            <p>Designed for content creators, software engineers, and digital builders.</p>
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card">
+                <div class="feature-icon">📈</div>
+                <h3>Real-Time Metrics</h3>
+                <p>Track follower counts, subscribers, and daily contribution streaks for GitHub, GitLab, YouTube, Instagram, LinkedIn, X, and personal portfolio sites.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">⚡</div>
+                <h3>Trends For You</h3>
+                <p>Live personalized news feed powered by NewsData.io tailored specifically to the social platforms and developer tools you track.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🔑</div>
+                <h3>One-Tap Google Auth</h3>
+                <p>Seamless authentication powered by Android Credential Manager API with hashed SHA-256 security for instant profile loading.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🎨</div>
+                <h3>Custom Theme Colors</h3>
+                <p>Personalize the entire Android application interface with custom accent color palettes (Coral, Emerald, Blue, Violet, Amber, Rose).</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">📱</div>
+                <h3>Live Android Widget</h3>
+                <p>Glance-powered home screen widget displaying your top platform stats without opening the app.</p>
+            </div>
+
+            <div class="feature-card">
+                <div class="feature-icon">🔒</div>
+                <h3>100% Private & Local</h3>
+                <p>Your API keys, profile data, and daily historical snapshots are saved exclusively on your phone with full JSON backup & restore capabilities.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- Release Updates & Changelog -->
+    <section class="updates" id="updates">
+        <div class="section-title">
+            <h2>Release Notes & Updates</h2>
+            <p>Track all version releases, new features, and continuous bug fixes.</p>
+        </div>
+
+        <div class="timeline">
+            <!-- v1.0.8 -->
+            <div class="timeline-item">
+                <div class="timeline-dot"></div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <span class="version-tag">Version 1.0.8 (Latest)</span>
+                        <span class="release-date">Oct 2026</span>
+                    </div>
+                    <div class="timeline-body">
+                        <strong>Hashed SHA-256 Nonce Google Auth</strong>
+                        <ul>
+                            <li>Updated `GoogleAuthManager` with dynamic SHA-256 hashed nonce for fresh Credential Manager sign-ins.</li>
+                            <li>Bypassed legacy email sheet intercepts for direct device Google account picking.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- v1.0.7 -->
+            <div class="timeline-item">
+                <div class="timeline-dot" style="background: var(--accent-cyan); box-shadow: 0 0 15px var(--accent-cyan);"></div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <span class="version-tag" style="color: var(--accent-cyan); background: rgba(0,176,255,0.15);">Version 1.0.7</span>
+                        <span class="release-date">Oct 2026</span>
+                    </div>
+                    <div class="timeline-body">
+                        <strong>Direct One-Tap Sign-In</strong>
+                        <ul>
+                            <li>Removed custom fallback email bottom sheet.</li>
+                            <li>Wired "Continue with Google" directly to native Android Credential Manager.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- v1.0.6 -->
+            <div class="timeline-item">
+                <div class="timeline-dot" style="background: var(--accent-green); box-shadow: 0 0 15px var(--accent-green);"></div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <span class="version-tag" style="color: var(--accent-green); background: rgba(0,230,118,0.15);">Version 1.0.6</span>
+                        <span class="release-date">Oct 2026</span>
+                    </div>
+                    <div class="timeline-body">
+                        <strong>ART Runtime Profile Fix</strong>
+                        <ul>
+                            <li>Added `androidx.profileinstaller` dependency to fix Xiaomi/Redmi MIUI & HyperOS `ArtManagerService` profile directory preparation errors.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- v1.0.0 - v1.0.5 -->
+            <div class="timeline-item">
+                <div class="timeline-dot" style="background: var(--accent-yellow); box-shadow: 0 0 15px var(--accent-yellow);"></div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <span class="version-tag" style="color: var(--accent-yellow); background: rgba(255,221,0,0.15);">Versions 1.0.0 - 1.0.5</span>
+                        <span class="release-date">Oct 2026</span>
+                    </div>
+                    <div class="timeline-body">
+                        <strong>Initial Launch & Foundation</strong>
+                        <ul>
+                            <li>Google Services & Firebase Auth setup.</li>
+                            <li>Explicit package launcher activity configuration for Redmi/Xiaomi devices.</li>
+                            <li>NewsData.io live trends feed integration.</li>
+                            <li>App Accent Theme Color selector & Buy Me a Coffee support card.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Bug Report & Feedback Section -->
+    <section class="feedback-section" id="feedback">
+        <div class="feedback-card">
+            <h2>🐛 Report a Bug or Request a Feature</h2>
+            <p style="color: var(--text-secondary); margin-top: 8px;">Found an issue or want a new social media platform added? Submit a bug report below to open a ticket on GitHub.</p>
+
+            <form class="bug-form" id="bugReportForm" onsubmit="handleBugSubmit(event)">
+                <div>
+                    <label for="issueType" style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: block;">Report Type</label>
+                    <select id="issueType" required>
+                        <option value="bug">🐛 Bug Report</option>
+                        <option value="feature">💡 Feature Request</option>
+                        <option value="platform">🌐 New Platform Request</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="issueTitle" style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: block;">Title / Summary</label>
+                    <input type="text" id="issueTitle" placeholder="e.g. Issue scanning YouTube channel link" required>
+                </div>
+
+                <div>
+                    <label for="issueDetails" style="font-size: 0.85rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 6px; display: block;">Details & Device Info</label>
+                    <textarea id="issueDetails" rows="4" placeholder="Describe what happened, your phone model (e.g. Redmi Note 9 Pro), and Android version." required></textarea>
+                </div>
+
+                <button type="submit" class="btn-submit">Submit Report to GitHub</button>
+            </form>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer>
+        <div>
+            <strong>TrackMe 1.0.8</strong> · Developed by <strong>R Rajkumar padmanabhan</strong>
+        </div>
+        <div>
+            <a href="https://github.com/RajkumarPadmanabhan/Track.APK" target="_blank">GitHub Repository</a>
+            <a href="https://github.com/RajkumarPadmanabhan/Track.APK/releases" target="_blank">All Releases</a>
+            <a href="http://buymeacoffee.com/rrajkumarpadmanabhan" target="_blank">☕ Support Developer</a>
+        </div>
+    </footer>
+
+    <script>
+        function handleBugSubmit(event) {
+            event.preventDefault();
+            const type = document.getElementById('issueType').value;
+            const title = document.getElementById('issueTitle').value;
+            const details = document.getElementById('issueDetails').value;
+
+            const labelMap = {
+                bug: 'bug',
+                feature: 'enhancement',
+                platform: 'new-platform'
+            };
+
+            const githubIssueUrl = `https://github.com/RajkumarPadmanabhan/Track.APK/issues/new?title=${encodeURIComponent('[' + type.toUpperCase() + '] ' + title)}&body=${encodeURIComponent(details + '\n\n---\n*Submitted via TrackMe Web Companion*')}&labels=${labelMap[type]}`;
+
+            window.open(githubIssueUrl, '_blank');
+            document.getElementById('bugReportForm').reset();
+        }
+    </script>
+</body>
+</html>
