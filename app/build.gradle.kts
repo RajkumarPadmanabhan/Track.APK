@@ -64,4 +64,7 @@ dependencies {
     // Firebase BoM & Auth
     implementation(platform("com.google.firebase:firebase-bom:33.4.0"))
     implementation("com.google.firebase:firebase-auth-ktx")
+
+    // ART Baseline Profile Installer
+    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
 }
