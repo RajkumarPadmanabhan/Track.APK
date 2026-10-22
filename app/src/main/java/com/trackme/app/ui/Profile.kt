@@ -104,14 +104,12 @@ fun ProfileScreen(vm: TrackViewModel) {
     val streak = remember(vm.accounts) { computeStreak(combinedActivity(vm.accounts)) }
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
-    val currentPlatformList = remember(vm.accounts) {
-        StaticSyncManager.exportAccounts(vm.accounts)
-    }
     var editProfile by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf<TrackedAccount?>(null) }
     var confirmSignOut by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showComingSoonDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -170,37 +168,6 @@ fun ProfileScreen(vm: TrackViewModel) {
             }
         }
 
-        // ----- Scan tags -----
-        item { SectionTitle("Scan tags", "The accounts shown on your home page") }
-
-        if (vm.accounts.isEmpty()) {
-            item {
-                Tile(Modifier.fillMaxWidth()) {
-                    Text(
-                        "No tags yet. Scan a profile link and it appears on your home page with daily counts.",
-                        modifier = Modifier.padding(18.dp),
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        } else {
-            items(vm.accounts.distinctBy { it.id }, key = { "tag-" + it.id }) { acc -> TagRow(acc, onRemove = { removing = acc }) }
-        }
-
-        item {
-            Button(
-                onClick = { vm.openAdd() },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = Color.Black),
-            ) {
-                Icon(Icons.Default.QrCodeScanner, null, Modifier.size(20.dp))
-                Spacer(Modifier.width(10.dp))
-                Text("Scan a new tag", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-
         // ----- Settings -----
         item { SectionTitle("Settings", "Customization and app info") }
 
@@ -209,7 +176,10 @@ fun ProfileScreen(vm: TrackViewModel) {
             Tile(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { vm.screen = Screen.LINKED_DEVICES }
+                    .clickable {
+                        Toast.makeText(context, "Linked Devices - Coming soon!", Toast.LENGTH_SHORT).show()
+                        showComingSoonDialog = true
+                    }
             ) {
                 Row(
                     modifier = Modifier
@@ -244,72 +214,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                                 fontSize = 16.sp
                             )
                             Text(
-                                "Pair with web dashboard & manage sessions",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = { vm.screen = Screen.LINKED_DEVICES },
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text("Manage", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
-        // Share Screen to PC Card
-        item {
-            Tile(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable {
-                        ScreenShareHelper.shareScreenToPc(
-                            context = context,
-                            platforms = currentPlatformList
-                        )
-                    }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ScreenShare,
-                                contentDescription = "Share Screen",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                "Share Screen to PC",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                            Text(
-                                "Send magic link to open live dashboard on PC",
+                                "Pair with web dashboard (Coming soon)",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -317,10 +222,8 @@ fun ProfileScreen(vm: TrackViewModel) {
                     }
                     Button(
                         onClick = {
-                            ScreenShareHelper.shareScreenToPc(
-                                context = context,
-                                platforms = currentPlatformList
-                            )
+                            Toast.makeText(context, "Linked Devices - Coming soon!", Toast.LENGTH_SHORT).show()
+                            showComingSoonDialog = true
                         },
                         shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
@@ -328,7 +231,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                             contentColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
-                        Text("Share 🚀", fontWeight = FontWeight.Bold)
+                        Text("Manage", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -774,6 +677,33 @@ fun ProfileScreen(vm: TrackViewModel) {
             confirmButton = {
                 TextButton(onClick = { showAboutDialog = false }) {
                     Text("Close", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    if (showComingSoonDialog) {
+        AlertDialog(
+            onDismissRequest = { showComingSoonDialog = false },
+            icon = {
+                Icon(
+                    Icons.Default.Computer,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = { Text("Coming Soon", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    "Linked Devices & Web Dashboard pairing will be available in an upcoming update!",
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = { showComingSoonDialog = false }) {
+                    Text("OK", fontWeight = FontWeight.Bold)
                 }
             }
         )
