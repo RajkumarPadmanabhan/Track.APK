@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -27,6 +28,8 @@ import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -55,6 +58,7 @@ import com.trackme.app.data.Platform
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -68,6 +72,7 @@ import com.trackme.app.data.Days
 import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.compactCount
+import com.trackme.app.data.parseCount
 import com.trackme.app.data.computeStreak
 import com.trackme.app.data.deltaToday
 import com.trackme.app.data.eventsOn
@@ -155,32 +160,25 @@ private fun todayLabel(): String =
 fun HomeScreen(vm: TrackViewModel) {
     val accounts = vm.accounts
     val session = vm.session ?: return
-    val combined = remember(accounts) { combinedActivity(accounts) }
+    val combined = remember(accounts) { combinedActivity(accounts.filter { !it.isHidden }) }
     val streak = remember(combined) { computeStreak(combined) }
     val todayEvents = combined[Days.key()] ?: 0
-    val gained = accounts.sumOf { (it.deltaToday() ?: 0L).coerceAtLeast(0L) }
+    val gained = accounts.filter { !it.isHidden }.sumOf { (it.deltaToday() ?: 0L).coerceAtLeast(0L) }
     val hasGit = accounts.any { it.platform.fullScan }
-
-    val newsFeed by vm.newsFeed.collectAsState()
-    val isNewsLoading by vm.isNewsLoading.collectAsState()
-    val userPlatforms = remember(accounts) { accounts.map { it.platform }.distinct() }
 
     // Pull today's numbers when the home page opens (skipped if they are fresh).
     LaunchedEffect(accounts.size) { vm.refreshAccounts() }
 
-    LaunchedEffect(userPlatforms) {
-        vm.loadPersonalizedNews(userPlatforms)
-    }
-
     var isRaining by remember { mutableStateOf(false) }
     var isGridView by remember { mutableStateOf(false) }
+    var selectedGroupForPopup by remember { mutableStateOf<List<TrackedAccount>?>(null) }
 
     LaunchedEffect(Unit) {
         isRaining = com.trackme.app.data.WeatherApi.checkIsRaining()
     }
 
     val yearContributions = remember(combined) { combined.values.sum() }
-    val totalSubscribers = remember(accounts) { accounts.sumOf { it.count ?: 0L } }
+    val totalSubscribers = remember(accounts) { accounts.filter { !it.isHidden }.sumOf { it.count ?: 0L } }
     val totalGrowth = yearContributions.toLong() + totalSubscribers
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -218,11 +216,7 @@ fun HomeScreen(vm: TrackViewModel) {
                 }
             }
 
-            vm.refreshNote?.let { note ->
-                item {
-                    Text(note, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                }
-            }
+
 
             item { HeroTile(totalGrowth, accounts.size, combined) }
 
@@ -273,51 +267,23 @@ fun HomeScreen(vm: TrackViewModel) {
             if (accounts.isEmpty()) {
                 item { EmptyTags(onScan = { vm.openAdd() }) }
             } else if (isGridView) {
-                items(accounts.distinctBy { it.id }.chunked(2)) { pair ->
+                val gridGroups = accounts.distinctBy { it.id }.groupBy { it.platform }.values.toList()
+                items(gridGroups.chunked(2)) { pair ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        pair.forEach { acc ->
+                        pair.forEach { group ->
                             Box(Modifier.weight(1f)) {
-                                GridAccountCard(acc) { vm.openAccount(acc.id) }
+                                if (group.size == 1) {
+                                    GridAccountCard(group.first(), onToggleVisibility = { vm.toggleAccountVisibility(group.first().id) }) { vm.openAccount(group.first().id) }
+                                } else {
+                                    StackedGridAccountCard(group) { selectedGroupForPopup = group }
+                                }
                             }
                         }
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
             } else {
-                items(accounts.distinctBy { it.id }, key = { it.id }) { acc -> AccountCard(acc) { vm.openAccount(acc.id) } }
-            }
-
-            // --- Live News & Trends Section ---
-            if (newsFeed.isNotEmpty() || isNewsLoading) {
-                item {
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 4.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "⚡ Trends For You",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        if (isNewsLoading) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(18.dp),
-                                strokeWidth = 2.dp,
-                                color = Brand.Coral
-                            )
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(8.dp))
-                }
-
-                items(newsFeed, key = { "news-" + it.id }) { post ->
-                    NewsPostCard(post = post)
-                }
+                items(accounts.distinctBy { it.id }, key = { it.id }) { acc -> AccountCard(acc, onToggleVisibility = { vm.toggleAccountVisibility(acc.id) }) { vm.openAccount(acc.id) } }
             }
 
             item { Spacer(Modifier.height(8.dp)) }
@@ -329,6 +295,44 @@ fun HomeScreen(vm: TrackViewModel) {
                     .fillMaxSize()
                     .pointerInput(Unit) {}
             )
+        }
+
+        if (selectedGroupForPopup != null) {
+            androidx.compose.ui.window.Dialog(onDismissRequest = { selectedGroupForPopup = null }) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(Brand.Panel)
+                ) {
+                    Column(Modifier.padding(24.dp).fillMaxWidth()) {
+                        Text("${selectedGroupForPopup!!.first().platform.label} Accounts", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                        Spacer(Modifier.height(16.dp))
+                        LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
+                            items(selectedGroupForPopup!!) { acc ->
+                                Row(
+                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
+                                        vm.openAccount(acc.id)
+                                        selectedGroupForPopup = null
+                                    }.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    AccountAvatar(acc, 40.dp)
+                                    Spacer(Modifier.width(12.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(acc.name.ifBlank { acc.handle }, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("@${acc.handle}", color = Color.White.copy(alpha=0.6f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    }
+                                }
+                            }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        androidx.compose.material3.TextButton(onClick = { selectedGroupForPopup = null }, modifier = Modifier.align(Alignment.End)) {
+                            Text("Cancel", color = Brand.Coral)
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -505,6 +509,17 @@ private data class CardModel(
 )
 
 private fun cardModel(a: TrackedAccount): CardModel {
+    if (a.isHidden) {
+        return CardModel(
+            big = "Hidden",
+            bigLabel = if (a.count != null) a.countLabel else "Status",
+            spark = emptyList(),
+            panelLabel = "Today",
+            panelValue = "-",
+            tone = Tone.FLAT,
+            extras = emptyList(),
+        )
+    }
     if (a.platform.fullScan) {
         val yearTotal = a.activity.values.sum()
         val week = a.weekEvents()
@@ -518,34 +533,47 @@ private fun cardModel(a: TrackedAccount): CardModel {
             extras = a.extras.filter { it.first == "Repos" },
         )
     }
+    val shownCount = a.count?.takeIf { it > 0L }
     val delta = a.deltaToday()
     val (value, tone) = when {
-        a.count == null -> "Saved" to Tone.FLAT
+        shownCount == null -> "Open" to Tone.FLAT
         delta == null -> "First day" to Tone.FLAT
         delta > 0 -> "+${compactCount(delta)}" to Tone.UP
         delta < 0 -> "-${compactCount(-delta)}" to Tone.DOWN
-        else -> "0" to Tone.FLAT
+        else -> "No change" to Tone.FLAT
     }
-    val filteredExtras = when (a.platform) {
-        Platform.YOUTUBE -> a.extras.filter { it.first == "Videos" }
-        Platform.INSTAGRAM -> a.extras.filter { it.first == "Following" }
-        Platform.FACEBOOK -> a.extras.filter { it.first == "Likes" || it.first == "Following" }
-        Platform.LINKEDIN -> a.extras.filter { it.first == "Connections" || it.first == "Members" }
-        else -> a.extras.filter { it.first == "Followers" || it.first == "Following" || it.first == "Connections" }
+    val following = a.extras.firstOrNull { it.first.equals("Following", true) }?.second
+        ?.let { raw -> parseCount(raw)?.takeIf { it > 0L }?.let { compactCount(it) } }
+    val (big, bigLabel, extras) = when (a.platform) {
+        Platform.YOUTUBE -> Triple(
+            shownCount?.let { compactCount(it) }.orEmpty(),
+            if (shownCount != null) a.countLabel else "",
+            a.extras.filter { it.first == "Videos" && it.second.isNotBlank() && it.second != "0" },
+        )
+        else -> when {
+            shownCount != null && following != null -> Triple(
+                compactCount(shownCount),
+                a.countLabel.ifBlank { "Followers" },
+                listOf("Following" to following),
+            )
+            shownCount != null -> Triple(compactCount(shownCount), a.countLabel.ifBlank { "Followers" }, emptyList())
+            following != null -> Triple(following, "Following", emptyList())
+            else -> Triple("", "", emptyList())
+        }
     }
     return CardModel(
-        big = a.count?.let { compactCount(it) } ?: "Active",
-        bigLabel = if (a.count != null) a.countLabel else "Status",
+        big = big,
+        bigLabel = bigLabel,
         spark = a.spark(),
-        panelLabel = "Today",
+        panelLabel = if (shownCount == null) "Profile" else "Today",
         panelValue = value,
         tone = tone,
-        extras = filteredExtras,
+        extras = extras,
     )
 }
 
 @Composable
-private fun AccountCard(acc: TrackedAccount, onClick: () -> Unit) {
+private fun AccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onClick: () -> Unit) {
     val m = remember(acc) { cardModel(acc) }
     val ink = Brand.Ink
     val notchW = 188.dp
@@ -576,15 +604,25 @@ private fun AccountCard(acc: TrackedAccount, onClick: () -> Unit) {
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
-                }
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(m.big, color = ink, fontSize = 38.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, lineHeight = 42.sp)
-                        Spacer(Modifier.height(4.dp))
-                        Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
+                    IconButton(onClick = onToggleVisibility, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            if (acc.isHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                            contentDescription = "Toggle Visibility",
+                            tint = ink,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
-                    WaveformBars(m.spark, Modifier.width(92.dp).height(44.dp), ink, ink.copy(alpha = 0.18f))
+                }
+                if (m.big.isNotBlank()) {
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(m.big, color = ink, fontSize = 38.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, lineHeight = 42.sp)
+                            Spacer(Modifier.height(4.dp))
+                            Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
+                        }
+                        WaveformBars(m.spark, Modifier.width(92.dp).height(44.dp), ink, ink.copy(alpha = 0.18f))
+                    }
                 }
             }
             // Right of the notch: secondary numbers (Videos, Repos, Following)
@@ -638,7 +676,7 @@ private fun AccountCard(acc: TrackedAccount, onClick: () -> Unit) {
 }
 
 @Composable
-private fun GridAccountCard(acc: TrackedAccount, onClick: () -> Unit) {
+private fun GridAccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onClick: () -> Unit) {
     val m = remember(acc) { cardModel(acc) }
 
     Tile(
@@ -668,10 +706,20 @@ private fun GridAccountCard(acc: TrackedAccount, onClick: () -> Unit) {
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                 }
+                IconButton(onClick = onToggleVisibility, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        if (acc.isHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                        contentDescription = "Toggle Visibility",
+                        tint = Color.White,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
             }
-            Column {
-                Text(m.big, color = Brand.Coral, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                Text(m.bigLabel, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (m.big.isNotBlank()) {
+                Column {
+                    Text(m.big, color = Brand.Coral, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                    Text(m.bigLabel, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
             m.extras.firstOrNull()?.let { (label, value) ->
                 Row(
@@ -681,6 +729,85 @@ private fun GridAccountCard(acc: TrackedAccount, onClick: () -> Unit) {
                 ) {
                     Text(label, color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
                     Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> Unit) {
+    val acc = group.first()
+    val totalCount = group.filter { !it.isHidden }.mapNotNull { it.count }.sum()
+    val label = if (group.any { it.platform.fullScan }) "Contributions" else acc.countLabel
+
+    Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) {
+        // Bottom layer (Left tilt)
+        Tile(
+            Modifier
+                .fillMaxWidth(0.85f)
+                .height(160.dp)
+                .offset(x = (-8).dp, y = 8.dp)
+                .rotate(-6f)
+        ) { 
+            Box(Modifier.fillMaxSize().background(acc.platform.cardColor.copy(alpha = 0.2f))) 
+        }
+        
+        // Middle layer (Right tilt)
+        Tile(
+            Modifier
+                .fillMaxWidth(0.9f)
+                .height(165.dp)
+                .offset(x = 6.dp, y = 2.dp)
+                .rotate(4f)
+        ) { 
+            Box(Modifier.fillMaxSize().background(acc.platform.cardColor.copy(alpha = 0.35f))) 
+        }
+
+        // Top layer (Straight)
+        Tile(
+            Modifier
+                .fillMaxWidth()
+                .height(170.dp)
+                .clickable(onClick = onClick)
+        ) {
+            Column(
+                Modifier.fillMaxSize().padding(14.dp),
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier.size(36.dp).clip(CircleShape).background(acc.platform.cardColor),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text("+${group.size}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "${acc.platform.label}s",
+                            color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "${group.size} Profiles",
+                            color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+                Column {
+                    val big = if (totalCount > 0) compactCount(totalCount) else "Multiple"
+                    Text(big, color = Brand.Coral, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
+                    Text("Total $label", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Tap to view", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                    Icon(Icons.Default.ViewList, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 }
             }
         }

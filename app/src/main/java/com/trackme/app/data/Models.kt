@@ -62,8 +62,8 @@ data class PlatformData(
 data class InstagramProfileStats(
     val username: String,
     val profileUrl: String,
-    val followers: String = "0",
-    val following: String = "0",
+    val followers: String = "",
+    val following: String = "",
     val lastUpdated: Long = System.currentTimeMillis()
 )
 

@@ -14,9 +14,10 @@ object GitHubApi {
             ?: "https://github.com/$username.png"
         val title = Regex("""<title[^>]*>(.*?)</title>""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)?.substringBefore("(")?.trim() ?: username
         val followersMatch = Regex("""([\d.,]+[KMBkmb]?)\s+Followers""", RegexOption.IGNORE_CASE).find(html)
-        val followers = if (followersMatch != null) parseAbbreviatedNumber(followersMatch.groupValues[1]) else 0L
+        val followers = followersMatch?.let { parseAbbreviatedNumber(it.groupValues[1]) }?.takeIf { it > 0L }
         val followingMatch = Regex("""([\d.,]+[KMBkmb]?)\s+Following""", RegexOption.IGNORE_CASE).find(html)
-        val following = if (followingMatch != null) parseAbbreviatedNumber(followingMatch.groupValues[1]) else 0L
+        val following = followingMatch?.let { parseAbbreviatedNumber(it.groupValues[1]) }?.takeIf { it > 0L }
+        if (followers == null && following == null) return null
         val reposMatch = Regex("""repositories\s*<span[^>]*class="[^"]*Counter[^"]*"[^>]*>\s*([\d.,]+[KMBkmb]?)\s*</span>""", RegexOption.IGNORE_CASE).find(html)
         val reposCount = if (reposMatch != null) parseAbbreviatedNumber(reposMatch.groupValues[1]).toInt() else 0
 
@@ -25,8 +26,8 @@ object GitHubApi {
             name = title.ifBlank { username },
             avatarUrl = ogImage,
             bio = "GitHub Developer",
-            followers = followers.toInt(),
-            following = following.toInt(),
+            followers = followers?.toInt() ?: 0,
+            following = following?.toInt() ?: 0,
             publicRepos = reposCount,
             htmlUrl = "https://github.com/$username",
             createdAt = "",

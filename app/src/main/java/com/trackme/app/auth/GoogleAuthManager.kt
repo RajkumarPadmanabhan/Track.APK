@@ -24,7 +24,7 @@ object GoogleAuthManager {
     // Your Web Client ID from Firebase / Cloud Console
     private const val WEB_CLIENT_ID = "757771017613-leg77sv2a0936n64afcnlh855jmd8qmr.apps.googleusercontent.com"
 
-    suspend fun signInWithGoogle(context: Context): Result<GoogleUserData> = withContext(Dispatchers.IO) {
+    suspend fun signInWithGoogle(context: Context): Result<GoogleUserData> = withContext(Dispatchers.Main) {
         val credentialManager = CredentialManager.create(context)
 
         // Generate a hashed nonce (required by GoogleIdOption)

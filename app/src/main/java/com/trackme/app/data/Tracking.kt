@@ -32,6 +32,7 @@ data class TrackedAccount(
     val activity: Map<String, Int>,
     val addedAt: String,
     val syncedAt: Long,
+    val isHidden: Boolean = false,
 )
 
 /** Fresh data read from a platform, before it is merged into a [TrackedAccount]. */
@@ -153,6 +154,7 @@ fun newAccount(platform: Platform, parsed: ParsedProfile, s: Snapshot): TrackedA
         activity = s.activity ?: emptyMap(),
         addedAt = today,
         syncedAt = System.currentTimeMillis(),
+        isHidden = false,
     )
 }
 
@@ -166,10 +168,15 @@ fun TrackedAccount.mergeWith(f: TrackedAccount): TrackedAccount {
         subtitle = f.subtitle ?: subtitle,
         count = f.count ?: count,
         countLabel = if (f.count != null) f.countLabel else countLabel,
-        extras = f.extras.ifEmpty { extras },
+        extras = if (!platform.fullScan && platform != Platform.YOUTUBE && (f.count != null || f.extras.isNotEmpty())) {
+            f.extras
+        } else {
+            f.extras.ifEmpty { extras }
+        },
         history = history + f.history,
         activity = act,
         syncedAt = f.syncedAt,
+        isHidden = isHidden,
     )
 }
 
@@ -260,23 +267,31 @@ object Sync {
         subtitle = user.bio ?: user.location,
         count = user.followers.toLong(),
         countLabel = "Followers",
-        extras = listOf(
-            "Repos" to "%,d".format(repos.size),
-            "Stars" to "%,d".format(repos.sumOf { it.stars }),
-            "Following" to "%,d".format(user.following),
-        ),
+        extras = buildList {
+            add("Repos" to "%,d".format(repos.size))
+            add("Stars" to "%,d".format(repos.sumOf { it.stars }))
+            if (user.following > 0) add("Following" to "%,d".format(user.following))
+        },
         activity = activity,
     )
 
     fun fromPreview(p: PublicProfile): Snapshot {
         val main = p.stats.firstOrNull { it.first == "Followers" || it.first == "Subscribers" }
+        val count = parseCount(main?.second)?.takeIf { it > 0L }
+        val extras = p.stats.mapNotNull { (label, value) ->
+            if (label == main?.first) return@mapNotNull null
+            val kept = label == "Following" || label == "Videos" || label == "Views"
+            if (!kept) return@mapNotNull null
+            if (label == "Following" && (parseCount(value) ?: 0L) <= 0L) return@mapNotNull null
+            if (value.equals("Hidden", true) || parseCount(value) != null) label to value else null
+        }
         return Snapshot(
             name = p.name,
             avatarUrl = p.imageUrl,
             subtitle = p.subtitle,
-            count = parseCount(main?.second),
-            countLabel = main?.first ?: "Followers",
-            extras = p.stats.filter { it != main },
+            count = count,
+            countLabel = if (count != null) main?.first.orEmpty() else "",
+            extras = extras,
             activity = null,
         )
     }
@@ -286,7 +301,7 @@ object Sync {
         avatarUrl = null,
         subtitle = null,
         count = null,
-        countLabel = "Followers",
+        countLabel = "",
         extras = emptyList(),
         activity = null,
     )
@@ -309,8 +324,8 @@ object Sync {
             }
             Platform.YOUTUBE ->
                 if (youtubeKey.isBlank()) null else fromPreview(SocialApi.fetchYouTube(parsed, youtubeKey))
-            Platform.INSTAGRAM, Platform.LINKEDIN, Platform.FACEBOOK, Platform.PORTFOLIO -> fromPreview(SocialApi.fetchPreview(acc.platform, parsed))
-            Platform.X -> null
+            Platform.INSTAGRAM, Platform.LINKEDIN, Platform.FACEBOOK, Platform.PORTFOLIO, Platform.X ->
+                fromPreview(SocialApi.fetchPreview(acc.platform, parsed))
         }
     }
 }
@@ -400,6 +415,7 @@ object Store {
         })
         put("history", JSONObject().also { o -> a.history.forEach { (k, v) -> o.put(k, v) } })
         put("activity", JSONObject().also { o -> a.activity.forEach { (k, v) -> o.put(k, v) } })
+        put("isHidden", a.isHidden)
     }
 
     private fun fromJson(o: JSONObject): TrackedAccount? {
@@ -433,6 +449,7 @@ object Store {
                 activity = activity,
                 addedAt = o.optString("addedAt"),
                 syncedAt = o.optLong("syncedAt"),
+                isHidden = o.optBoolean("isHidden", false),
             )
         } catch (e: Exception) {
             null

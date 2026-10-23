@@ -44,7 +44,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -106,7 +105,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardType
+import com.trackme.app.data.parseCount
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -221,6 +220,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                     onHome = { vm.screen = Screen.HOME },
                     onProfile = { vm.screen = Screen.PROFILE },
                     onScan = { vm.openAdd() },
+                    onNews = { vm.screen = Screen.NEWS }
                 )
             }
         },
@@ -230,6 +230,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                 Screen.HOME -> HomeScreen(vm)
                 Screen.PROFILE -> ProfileScreen(vm)
                 Screen.DETAIL -> DetailScreen(vm, tab)
+                Screen.NEWS -> NewsScreen(vm)
                 Screen.LINKED_DEVICES -> LinkedDevicesScreen(
                     currentPlatforms = remember(vm.accounts) { com.trackme.app.data.StaticSyncManager.exportAccounts(vm.accounts) }
                 )
@@ -278,11 +279,7 @@ private fun DetailScreen(vm: TrackViewModel, tab: Int) {
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(16.dp),
             )
-            profile != null -> LinkProfileCard(vm.platform, profile, vm.preview, vm.previewNote) {
-                if (acc != null && !acc.platform.fullScan) {
-                    ManualCountTile(vm, acc)
-                }
-            }
+            profile != null -> LinkProfileCard(vm.platform, profile, vm.preview, vm.previewNote)
             user != null -> when (tab) {
                 0 -> OverviewTab(vm, user)
                 1 -> GraphsTab(vm)
@@ -291,39 +288,6 @@ private fun DetailScreen(vm: TrackViewModel, tab: Int) {
         }
     }
 }
-
-/** For platforms that don't share follower counts: type today's number and TrackMe tracks the daily change. */
-@Composable
-private fun ManualCountTile(vm: TrackViewModel, acc: TrackedAccount) {
-    var text by remember(acc.id) { mutableStateOf(acc.count?.toString() ?: "") }
-    Tile(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Today's ${acc.countLabel.lowercase()}", fontWeight = FontWeight.Bold)
-            Text(
-                "${acc.platform.label} doesn't share this number, so type it in. " +
-                    "TrackMe saves it each day and shows the change on your home page.",
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(
-                    value = text,
-                    onValueChange = { v -> text = v.filter { it.isDigit() }.take(12) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true,
-                    shape = RoundedCornerShape(20.dp),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    placeholder = { Text("e.g. 1200") },
-                )
-                Button(
-                    onClick = { text.toLongOrNull()?.let { vm.setManualCount(acc.id, it) } },
-                    enabled = text.toLongOrNull() != null,
-                ) { Text("Save") }
-            }
-        }
-    }
-}
-
 
 // ---------- Bottom pill navigation ----------
 
@@ -379,15 +343,20 @@ private fun LinkProfileCard(
     profile: ParsedProfile,
     preview: PublicProfile?,
     note: String?,
-    extra: @Composable () -> Unit = {},
 ) {
     val ctx = LocalContext.current
     Column(
         Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        if (preview != null) PreviewCard(preview)
-        extra()
+        if (preview != null) {
+            val stats = preview.stats.filter { (label, value) ->
+                val kept = label == "Followers" || label == "Following" ||
+                    label == "Subscribers" || label == "Views" || label == "Videos"
+                kept && (value.equals("Hidden", true) || (parseCount(value) ?: 0L) > 0L)
+            }
+            if (stats.isNotEmpty()) PreviewCard(preview.copy(stats = stats))
+        }
         note?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Tile(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -628,7 +597,16 @@ private fun OverviewTab(vm: TrackViewModel, user: GhUser) {
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BigTile("Forks", fmt(totalForks), null, Modifier.weight(1f))
-            BigTile("Followers", fmt(user.followers), "Following: ${fmt(user.following)}", Modifier.weight(1f))
+            if (user.followers > 0) {
+                BigTile(
+                    "Followers",
+                    fmt(user.followers),
+                    if (user.following > 0) "Following: ${fmt(user.following)}" else null,
+                    Modifier.weight(1f),
+                )
+            } else if (user.following > 0) {
+                BigTile("Following", fmt(user.following), null, Modifier.weight(1f))
+            }
         }
 
         Tile(Modifier.fillMaxWidth()) {

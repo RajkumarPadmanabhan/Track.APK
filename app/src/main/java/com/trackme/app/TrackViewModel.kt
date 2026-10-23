@@ -34,7 +34,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES }
+enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES, NEWS }
 
 class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -420,6 +420,13 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         persist()
     }
 
+    fun toggleAccountVisibility(id: String) {
+        accounts = accounts.map {
+            if (it.id == id) it.copy(isHidden = !it.isHidden) else it
+        }
+        persist()
+    }
+
     fun openAccount(id: String) {
         val acc = accounts.firstOrNull { it.id == id } ?: return
         detailId = id
@@ -459,8 +466,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                         if (note == null && e.message?.contains("Rate limit", ignoreCase = true) != true) {
                             note = "${acc.platform.label}: ${e.message}"
                         }
-                    } catch (e: Exception) {
-                        // Keep saved numbers silently
+                    } catch (_: Throwable) {
+                        // Keep saved numbers silently. A bad page must not close the app.
                     }
                 }
                 accounts = accounts.map { cur -> fresh[cur.id]?.let { cur.mergeWith(it) } ?: cur }
@@ -546,7 +553,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 if (platform == p) preview = result
             } catch (e: ApiException) {
                 if (platform == p) previewNote = e.message
-            } catch (e: Exception) {
+            } catch (_: Throwable) {
                 if (platform == p) {
                     previewNote = "Couldn't read the ${p.label} profile. Showing the profile link instead."
                 }

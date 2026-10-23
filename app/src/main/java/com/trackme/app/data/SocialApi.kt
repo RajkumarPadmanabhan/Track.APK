@@ -1,19 +1,15 @@
 package com.trackme.app.data
 
-import android.text.Html
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
-import java.util.regex.Pattern
 
 /**
  * Reads public profile details for platforms without an open repo API.
  *  - YouTube: official YouTube Data API v3 (needs the user's own free API key).
- *  - Instagram / LinkedIn / Facebook Page: public page standard link-preview tags.
+ *  - Instagram, LinkedIn, Facebook, and other public pages: follower and following counts only.
  */
 object SocialApi {
 
@@ -107,261 +103,23 @@ object SocialApi {
             )
         }
 
-    // ---------- Instagram / LinkedIn / Facebook (public page preview) ----------
-
+    // Follower and following counts only. A missing count is left out.
     suspend fun fetchPreview(platform: Platform, profile: ParsedProfile): PublicProfile =
         withContext(Dispatchers.IO) {
-            if (platform == Platform.INSTAGRAM) {
-                return@withContext instagramCounts(profile)
+            val counts = SocialCountScraper.fetch(profile.url)
+                ?: throw ApiException("Couldn't open this ${platform.label} page. Showing the link instead.")
+            val handle = profile.handle.trim().trimStart('@').ifBlank { profile.url }
+            val stats = buildList {
+                counts.followers?.let { add("Followers" to it) }
+                counts.following?.let { add("Following" to it) }
             }
-            val html = getHtml(platform, profile.url)
-            val og = parseOg(html)
-            val titleTag = Regex("""<title[^>]*>(.*?)</title>""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)?.let {
-                Html.fromHtml(it, Html.FROM_HTML_MODE_LEGACY).toString().trim()
-            }.orEmpty()
-            val title = og["title"].orEmpty().ifBlank { titleTag }
-            if (platform != Platform.PORTFOLIO && (title.isBlank() || looksLikeLogin(title))) {
-                throw ApiException(
-                    "${platform.label} only shows this profile to logged-in visitors. " +
-                        "Showing the profile link instead."
-                )
-            }
-            when (platform) {
-                Platform.LINKEDIN -> parseLinkedIn(profile, title, og)
-                Platform.FACEBOOK -> parseFacebook(profile, title, og)
-                Platform.PORTFOLIO -> parsePortfolio(profile, title, og)
-                else -> throw ApiException("Preview is not supported for ${platform.label}.")
-            }
-        }
-
-    private fun parsePortfolio(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
-        val desc = og["description"].orEmpty()
-        val followerMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+(followers|members|subscribers)", Pattern.CASE_INSENSITIVE).matcher(desc)
-        val followingMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+(following|connections)", Pattern.CASE_INSENSITIVE).matcher(desc)
-
-        val followers = if (followerMatcher.find()) followerMatcher.group(1) else null
-        val following = if (followingMatcher.find()) followingMatcher.group(1) else null
-
-        val stats = mutableListOf<Pair<String, String>>()
-        if (!followers.isNullOrBlank()) stats.add("Followers" to followers)
-        if (!following.isNullOrBlank()) stats.add("Following" to following)
-
-        val name = title.ifBlank { profile.handle }
-        return PublicProfile(
-            name = name,
-            handle = "@${profile.handle.trimStart('@')}",
-            subtitle = null,
-            description = null,
-            imageUrl = og["image"],
-            stats = stats,
-        )
-    }
-
-    /** Instagram tags store follower and following counts. Name, photo, bio, and posts are not kept. */
-    private suspend fun instagramCounts(profile: ParsedProfile): PublicProfile {
-        val counts = InstagramScraper.fetchCountsOnly(profile.url)
-            ?: throw ApiException(
-                "Instagram didn't share follower and following counts for this profile. " +
-                    "Showing the profile link instead."
+            PublicProfile(
+                name = handle,
+                handle = "@$handle",
+                subtitle = null,
+                description = null,
+                imageUrl = null,
+                stats = stats,
             )
-        val handle = profile.handle.trimStart('@')
-        return PublicProfile(
-            name = handle,
-            handle = "@$handle",
-            subtitle = null,
-            description = null,
-            imageUrl = null,
-            stats = listOf(
-                "Followers" to counts.followers,
-                "Following" to counts.following,
-            ),
-        )
-    }
-
-    private fun parseLinkedIn(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
-        val desc = og["description"].orEmpty()
-        val followerMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+(followers|members)", Pattern.CASE_INSENSITIVE).matcher(desc)
-        val connMatcher = Pattern.compile("([0-9.,KkMm]+)\\+?\\s+connections", Pattern.CASE_INSENSITIVE).matcher(desc)
-
-        val followers = if (followerMatcher.find()) followerMatcher.group(1) else null
-        val connections = if (connMatcher.find()) connMatcher.group(1) else null
-
-        val stats = mutableListOf<Pair<String, String>>()
-        followers?.let { stats.add("Followers" to it) }
-        connections?.let { stats.add("Connections" to it) }
-
-        val clean = title.substringBefore(" | LinkedIn").trim()
-        val name = clean.substringBefore(" - ").ifBlank { profile.handle }
-        return PublicProfile(
-            name = name,
-            handle = "@${profile.handle.trimStart('@')}",
-            subtitle = null,
-            description = null,
-            imageUrl = og["image"],
-            stats = stats,
-        )
-    }
-
-    private fun parseFacebook(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
-        val desc = og["description"].orEmpty()
-        val followerMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+(followers|people follow this)", Pattern.CASE_INSENSITIVE).matcher(desc)
-        val likeMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+likes", Pattern.CASE_INSENSITIVE).matcher(desc)
-
-        val followers = if (followerMatcher.find()) followerMatcher.group(1) else null
-        val likes = if (likeMatcher.find()) likeMatcher.group(1) else null
-
-        val stats = mutableListOf<Pair<String, String>>()
-        followers?.let { stats.add("Followers" to it) }
-        likes?.let { stats.add("Likes" to it) }
-
-        val name = title.substringBefore(" | Facebook").substringBefore(" - Home").trim().ifBlank { profile.handle }
-        return PublicProfile(
-            name = name,
-            handle = "@${profile.handle.trimStart('@')}",
-            subtitle = null,
-            description = null,
-            imageUrl = og["image"],
-            stats = stats,
-        )
-    }
-
-    private fun looksLikeLogin(title: String): Boolean {
-        val t = title.lowercase().trim()
-        if (t.contains("followers") || t.contains("following")) return false
-        return t == "instagram" || t == "linkedin" || t == "facebook" ||
-            listOf("log in", "login", "sign in", "sign up", "authwall").any { t.contains(it) }
-    }
-
-    private fun getHtml(platform: Platform, url: String): String {
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "GET"
-        conn.instanceFollowRedirects = true
-        conn.connectTimeout = 15000
-        conn.readTimeout = 20000
-        val ua = if (platform == Platform.INSTAGRAM || platform == Platform.FACEBOOK || platform == Platform.LINKEDIN) {
-            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
-        } else {
-            "Mozilla/5.0 (Linux; Android 13; TrackMe) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
         }
-        conn.setRequestProperty("User-Agent", ua)
-        conn.setRequestProperty("Accept", "text/html")
-        conn.setRequestProperty("Accept-Language", "en")
-        try {
-            val code = conn.responseCode
-            if (code !in 200..299) {
-                throw ApiException(
-                    "${platform.label} didn't allow a public preview (error $code). " +
-                        "Showing the profile link instead."
-                )
-            }
-            return conn.inputStream.bufferedReader().use { r ->
-                val sb = StringBuilder()
-                val buf = CharArray(8192)
-                while (sb.length < 600_000) {
-                    val n = r.read(buf)
-                    if (n < 0) break
-                    sb.append(buf, 0, n)
-                }
-                sb.toString()
-            }
-        } finally {
-            conn.disconnect()
-        }
-    }
-
-    private val metaTag = Regex("""<meta\s+[^>]*>""", RegexOption.IGNORE_CASE)
-    private val propAttr = Regex("""(?:property|name)\s*=\s*["']og:([a-z:_]+)["']""", RegexOption.IGNORE_CASE)
-    private val contentAttr = Regex("""content\s*=\s*(?:"([^"]*)"|'([^']*)')""", RegexOption.IGNORE_CASE)
-
-    private fun parseOg(html: String): Map<String, String> {
-        val map = HashMap<String, String>()
-        for (tag in metaTag.findAll(html)) {
-            val t = tag.value
-            val key = propAttr.find(t)?.groupValues?.get(1) ?: continue
-            val c = contentAttr.find(t) ?: continue
-            val raw = c.groupValues[1].ifEmpty { c.groupValues[2] }
-            if (key !in map) {
-                map[key] = Html.fromHtml(raw, Html.FROM_HTML_MODE_LEGACY).toString().trim()
-            }
-        }
-        return map
-    }
-}
-
-object SocialScraper {
-    suspend fun fetchPublicProfile(urlStr: String, platform: Platform): PlatformData = withContext(Dispatchers.IO) {
-        val html = fetchHtml(urlStr)
-        when (platform) {
-            Platform.INSTAGRAM -> parseInstagram(html, urlStr)
-            Platform.FACEBOOK -> parseFacebookPage(html, urlStr)
-            Platform.LINKEDIN -> parseLinkedIn(html, urlStr)
-            Platform.YOUTUBE -> parseYouTube(urlStr)
-            else -> PlatformData(platform, "user", 0L)
-        }
-    }
-
-    private fun fetchHtml(urlString: String): String {
-        val url = URL(urlString)
-        val conn = (url.openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-            connectTimeout = 8000
-            readTimeout = 8000
-        }
-        return conn.inputStream.bufferedReader().use { it.readText() }
-    }
-
-    // Parses Instagram public meta description tag: "<meta content='XX Followers, YY Following, ZZ Posts'...>"
-    private fun parseInstagram(html: String, rawUrl: String): PlatformData {
-        val matcher = Pattern.compile("content=\"([0-9.,KkMm]+)\\s+Followers").matcher(html)
-        val followers = if (matcher.find()) parseAbbreviatedNumber(matcher.group(1) ?: "") else 0L
-        val username = rawUrl.trimEnd('/').substringAfterLast('/')
-        return PlatformData(Platform.INSTAGRAM, username, followers)
-    }
-
-    // Parses Facebook Page followers/likes from Open Graph description
-    private fun parseFacebookPage(html: String, rawUrl: String): PlatformData {
-        val matcher = Pattern.compile("([0-9.,KkMm]+)\\s+(likes|people follow this|followers)").matcher(html)
-        val followers = if (matcher.find()) parseAbbreviatedNumber(matcher.group(1)) else 0L
-        val pageName = rawUrl.trimEnd('/').substringAfterLast('/')
-        return PlatformData(Platform.FACEBOOK, pageName, followers)
-    }
-
-    // Parses LinkedIn public company/creator profile follower count
-    private fun parseLinkedIn(html: String, rawUrl: String): PlatformData {
-        val matcher = Pattern.compile("([0-9.,]+)\\s+followers").matcher(html)
-        val followers = if (matcher.find()) parseAbbreviatedNumber(matcher.group(1)) else 0L
-        val handle = rawUrl.trimEnd('/').substringAfterLast('/')
-        return PlatformData(Platform.LINKEDIN, handle, followers)
-    }
-
-    // Direct YouTube Channel API or RSS feed parsing
-    suspend fun parseYouTube(channelUrl: String): PlatformData {
-        // If using YouTube Data API v3:
-        // 1. Fetch channel statistics: subscriberCount, viewCount
-        // 2. Fetch search/activities: list recent videos for the channel
-        return PlatformData(
-            platform = Platform.YOUTUBE,
-            username = channelUrl.substringAfterLast("/"),
-            followersOrSubs = 35200L,
-            recentVideos = listOf(
-                YouTubeVideoItem("1", "Building Compose Apps", "2 days ago", "https://img.youtube.com/..."),
-                YouTubeVideoItem("2", "Architecture Guidelines", "1 week ago", "https://img.youtube.com/...")
-            ),
-            historicalMetrics = listOf(
-                "Mon" to 34100L, "Tue" to 34400L, "Wed" to 34800L, "Thu" to 35200L
-            )
-        )
-    }
-
-    private fun parseAbbreviatedNumber(raw: String): Long {
-        val cleaned = raw.replace(",", "").trim()
-        val factor = when {
-            cleaned.endsWith("k", true) -> 1_000.0
-            cleaned.endsWith("m", true) -> 1_000_000.0
-            else -> 1.0
-        }
-        val numberPart = cleaned.replace("[^0-9.]".toRegex(), "")
-        return ((numberPart.toDoubleOrNull() ?: 0.0) * factor).toLong()
-    }
 }

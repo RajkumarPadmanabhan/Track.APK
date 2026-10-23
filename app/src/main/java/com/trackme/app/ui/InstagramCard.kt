@@ -59,8 +59,12 @@ fun InstagramStatsCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                CountColumn(label = "Followers", value = stats.followers)
-                CountColumn(label = "Following", value = stats.following)
+                if (stats.followers.isNotBlank() && stats.followers != "0") {
+                    CountColumn(label = "Followers", value = stats.followers)
+                }
+                if (stats.following.isNotBlank() && stats.following != "0") {
+                    CountColumn(label = "Following", value = stats.following)
+                }
             }
         }
     }

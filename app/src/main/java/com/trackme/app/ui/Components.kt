@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -366,7 +367,7 @@ fun AccountAvatar(acc: com.trackme.app.data.TrackedAccount, size: Dp = 44.dp) {
 // ---------- Bottom navigation: Home | scan | Profile ----------
 
 @Composable
-fun HomeNav(selected: Screen, onHome: () -> Unit, onProfile: () -> Unit, onScan: () -> Unit) {
+fun HomeNav(selected: Screen, onHome: () -> Unit, onProfile: () -> Unit, onScan: () -> Unit, onNews: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -384,6 +385,23 @@ fun HomeNav(selected: Screen, onHome: () -> Unit, onProfile: () -> Unit, onScan:
                 .size(54.dp)
                 .clip(CircleShape)
                 .background(Color.White)
+                .pointerInput(Unit) {
+                    var totalDragY = 0f
+                    detectVerticalDragGestures(
+                        onDragStart = { totalDragY = 0f },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            totalDragY += dragAmount
+                            if (totalDragY < -40f) {
+                                onNews()
+                                totalDragY = 0f
+                            } else if (totalDragY > 40f) {
+                                onHome()
+                                totalDragY = 0f
+                            }
+                        }
+                    )
+                }
                 .clickable { onScan() },
             contentAlignment = Alignment.Center,
         ) {

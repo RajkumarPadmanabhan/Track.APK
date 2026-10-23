@@ -50,6 +50,7 @@ import com.trackme.app.TrackViewModel
 import com.trackme.app.data.Platform
 import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.compactCount
+import com.trackme.app.data.parseCount
 
 /**
  * "Scan a tag": pick a platform, paste a profile link, scan, then add the result to the home page.
@@ -206,43 +207,58 @@ private fun DraftCard(d: TrackedAccount) {
                 )
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.Bottom) {
-            Column(
-                modifier = Modifier.padding(start = 20.dp, top = 8.dp)
-            ) {
-                val formattedCount = d.count?.let { compactCount(it) } ?: "—"
-                val metricLabel = d.countLabel
-                Text(
-                    text = formattedCount,
-                    style = MaterialTheme.typography.displaySmall.copy(
-                        fontSize = 34.sp,
-                        fontWeight = FontWeight.Bold,
-                        lineHeight = 36.sp
-                    ),
-                    color = Color.Black
-                )
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = metricLabel,
-                    style = MaterialTheme.typography.bodySmall.copy(
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium
-                    ),
-                    color = Color.Black.copy(alpha = 0.7f)
-                )
-            }
-            d.extras.take(2).forEach { (label, value) ->
-                Column {
-                    Text(value, color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Text(label, color = ink.copy(alpha = 0.65f), fontSize = 12.sp)
+        val social = !d.platform.fullScan && d.platform != Platform.YOUTUBE
+        val followers = d.count?.takeIf { it > 0L }
+        val following = d.extras.firstOrNull { it.first.equals("Following", true) }?.second
+            ?.let { raw -> parseCount(raw)?.takeIf { it > 0L }?.let { compactCount(it) } }
+        val otherExtras = if (social) emptyList() else d.extras.take(2).mapNotNull { (label, value) ->
+            if (label == "Following") return@mapNotNull null
+            if (value.isBlank() || value == "0") return@mapNotNull null
+            label to value
+        }
+        if (followers != null || (social && following != null) || otherExtras.isNotEmpty()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.Bottom) {
+                if (followers != null) {
+                    Column(modifier = Modifier.padding(start = 20.dp, top = 8.dp)) {
+                        Text(
+                            text = compactCount(followers),
+                            style = MaterialTheme.typography.displaySmall.copy(
+                                fontSize = 34.sp,
+                                fontWeight = FontWeight.Bold,
+                                lineHeight = 36.sp
+                            ),
+                            color = Color.Black
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = d.countLabel.ifBlank { "Followers" },
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            ),
+                            color = Color.Black.copy(alpha = 0.7f)
+                        )
+                    }
+                } else if (following != null && social) {
+                    Column(modifier = Modifier.padding(start = 20.dp, top = 8.dp)) {
+                        Text(following, color = ink, fontSize = 34.sp, fontWeight = FontWeight.Bold)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Following", color = ink.copy(alpha = 0.7f), fontSize = 12.sp)
+                    }
+                }
+                if (social && followers != null && following != null) {
+                    Column {
+                        Text(following, color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text("Following", color = ink.copy(alpha = 0.65f), fontSize = 12.sp)
+                    }
+                }
+                otherExtras.forEach { (label, value) ->
+                    Column {
+                        Text(value, color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                        Text(label, color = ink.copy(alpha = 0.65f), fontSize = 12.sp)
+                    }
                 }
             }
-        }
-        if (d.count == null) {
-            Text(
-                "This platform doesn't share its follower count. You can type it in yourself on the tag's page.",
-                color = ink.copy(alpha = 0.7f), fontSize = 12.sp,
-            )
         }
     }
 }

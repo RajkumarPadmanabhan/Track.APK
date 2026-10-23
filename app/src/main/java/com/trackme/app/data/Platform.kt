@@ -5,8 +5,7 @@ data class ParsedProfile(val handle: String, val url: String)
 /**
  * Supported social platforms.
  * fullScan   = true  -> repo platform with an official open API (GitHub, GitLab).
- * hasPreview = true  -> TrackMe also tries to read public profile details (YouTube API, or the
- *                       public page preview for Instagram / LinkedIn) and falls back to a link card.
+ * hasPreview = true  -> TrackMe reads follower and following counts when the page publishes them.
  */
 enum class Platform(
     val label: String,
@@ -31,24 +30,21 @@ enum class Platform(
     ),
     INSTAGRAM(
         "Instagram", "https://instagram.com/username", false,
-        "Reads follower and following counts only. " +
-            "Instagram sometimes hides them; you then get the profile link card instead.",
+        "Shows follower and following counts when the page publishes them.",
         Regex("""(?:https?://)?(?:www\.)?instagram\.com/([A-Za-z0-9._]+)""", RegexOption.IGNORE_CASE),
         Regex("^[A-Za-z0-9._]+$"),
         "https://www.instagram.com/",
     ),
     LINKEDIN(
         "LinkedIn", "https://linkedin.com/in/username", false,
-        "Reads the public profile preview (name, headline, photo) when LinkedIn allows it. " +
-            "LinkedIn blocks most automated reads; you then get the profile link card instead.",
-        Regex("""(?:https?://)?(?:www\.)?linkedin\.com/(?:in|company)/([A-Za-z0-9_%.-]+)""", RegexOption.IGNORE_CASE),
+        "Shows follower and following counts when the page publishes them.",
+        Regex("""(?:https?://)?(?:(?:www|m)\.)?linkedin\.com/(?:in|company|school)/([A-Za-z0-9_%.-]+)""", RegexOption.IGNORE_CASE),
         Regex("^[A-Za-z0-9_%.-]+$"),
         "https://www.linkedin.com/in/",
     ),
     X(
         "X", "https://x.com/username", false,
-        "X restricts profile data behind a paid API, so TrackMe saves the profile link and lets " +
-            "you open, share or copy it.",
+        "Shows follower and following counts when the page publishes them.",
         Regex("""(?:https?://)?(?:www\.)?(?:x|twitter)\.com/([A-Za-z0-9_]+)""", RegexOption.IGNORE_CASE),
         Regex("^[A-Za-z0-9_]{1,15}$"),
         "https://x.com/",
@@ -65,23 +61,25 @@ enum class Platform(
         "https://www.youtube.com/",
     ),
     FACEBOOK(
-        "Facebook Page", "https://facebook.com/pagename", false,
-        "Reads public Facebook Page followers and likes when available. " +
-            "If Facebook blocks access, showing the page link instead.",
-        Regex("""(?:https?://)?(?:www\.)?facebook\.com/([A-Za-z0-9.%_-]+)""", RegexOption.IGNORE_CASE),
+        "Facebook", "https://facebook.com/pagename", false,
+        "Shows follower and following counts for a profile or page when Facebook publishes them.",
+        Regex(
+            """(?:https?://)?(?:(?:www|m|mbasic|web)\.)?(?:facebook\.com|fb\.com)/((?:profile\.php\?id=\d+|people/[A-Za-z0-9.\-]+/\d+|[A-Za-z0-9.%_\-]+))""",
+            RegexOption.IGNORE_CASE,
+        ),
         Regex("^[A-Za-z0-9.%_-]+$"),
         "https://www.facebook.com/",
     ),
     PORTFOLIO(
         "Portfolio Website", "https://myportfolio.com", false,
-        "Fetches site title, OpenGraph metadata, and status directly from your personal portfolio website.",
+        "Shows follower and following counts when that website publishes them.",
         Regex("""(?:https?://)?([A-Za-z0-9_.-]+\.[A-Za-z]{2,}(?:/[^\s]*)?)""", RegexOption.IGNORE_CASE),
         Regex("^[A-Za-z0-9_.-]+\\.[A-Za-z]{2,}$"),
         "https://",
     );
 
     val hasPreview: Boolean
-        get() = this == INSTAGRAM || this == LINKEDIN || this == YOUTUBE || this == FACEBOOK || this == PORTFOLIO
+        get() = this != GITHUB && this != GITLAB
 
     fun matches(text: String): Boolean = urlRegex.containsMatchIn(text)
 
@@ -91,10 +89,20 @@ enum class Platform(
         if (t.isEmpty()) return null
 
         urlRegex.find(t)?.let { m ->
+            val handle = m.groupValues[1]
+            if (this == FACEBOOK) {
+                val id = Regex("""profile\.php\?id=(\d+)""", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)
+                    ?: Regex("""/people/[^/?#]+/(\d+)""", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)
+                if (id != null) {
+                    return ParsedProfile(id, "https://www.facebook.com/profile.php?id=$id")
+                }
+                val slug = handle.substringBefore('?').substringAfterLast('/').trim('/')
+                return ParsedProfile(slug, "https://www.facebook.com/$slug")
+            }
             val clean = m.value
                 .replace(Regex("^https?://", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("^www\\.", RegexOption.IGNORE_CASE), "")
-            return ParsedProfile(m.groupValues[1], "https://$clean")
+            return ParsedProfile(handle, "https://$clean")
         }
 
         val bare = t.removePrefix("@")
