@@ -63,17 +63,6 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     var liveTicker by mutableStateOf(System.currentTimeMillis())
         private set
 
-    init {
-        loadBadgeState()
-        refreshBadges()
-        viewModelScope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(1000L)
-                liveTicker = System.currentTimeMillis()
-            }
-        }
-    }
-
     // ---------- Session + tracked tags ----------
     var session by mutableStateOf(Store.loadUser(prefs))
         private set
@@ -90,6 +79,18 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var verified by mutableStateOf(false)
         private set
+
+    init {
+        loadBadgeState()
+        refreshBadges()
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1000L)
+                liveTicker = System.currentTimeMillis()
+            }
+        }
+    }
+
     var screen by mutableStateOf(Screen.HOME)
     var showAdd by mutableStateOf(false)
     var detailId by mutableStateOf<String?>(null)
