@@ -17,6 +17,18 @@ data class UserSession(val email: String, val name: String, val avatarUrl: Strin
  *  - history    : one saved value per day (yyyy-MM-dd, local time) -> used for the daily +/- change
  *  - activity   : git events per day (GitHub / GitLab), used for the heatmap and streaks
  */
+fun TrackedAccount.siteKey(): String {
+    if (platform != Platform.PORTFOLIO) return platform.name
+    val raw = url.lowercase().substringBefore('?').substringBefore('#')
+    val host = raw.substringAfter("://", raw).removePrefix("www.").substringBefore('/').ifBlank { "site" }
+    return "web:$host"
+}
+
+fun TrackedAccount.siteLabel(): String {
+    if (platform != Platform.PORTFOLIO) return platform.label
+    return siteKey().removePrefix("web:")
+}
+
 data class TrackedAccount(
     val id: String,
     val platform: Platform,

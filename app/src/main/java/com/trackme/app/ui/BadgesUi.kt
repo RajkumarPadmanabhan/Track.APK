@@ -1,6 +1,7 @@
 package com.trackme.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -16,7 +17,18 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.EmojiEvents
+import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.WorkspacePremium
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,35 +46,38 @@ import androidx.compose.ui.unit.sp
 import com.trackme.app.data.BadgeBook
 import com.trackme.app.data.EarnedBadge
 
+private val activityMarks = listOf(
+    Icons.Default.Bolt to Color(0xFFFF7043),
+    Icons.Default.LocalFireDepartment to Color(0xFFE53935),
+    Icons.Default.EmojiEvents to Color(0xFFFFB300),
+    Icons.Default.AutoAwesome to Color(0xFF7E57C2),
+    Icons.Default.WorkspacePremium to Color(0xFF26C6DA),
+    Icons.Default.Star to Color(0xFF66BB6A),
+)
+
+private fun badgeStyle(id: String): Pair<ImageVector, Color> = when (id) {
+    BadgeBook.SCAN_1 -> Icons.Default.Star to Color(0xFFF9A825)
+    BadgeBook.SCAN_5 -> Icons.Default.WorkspacePremium to Color(0xFF7C4DFF)
+    BadgeBook.SIZE_100 -> Icons.Default.Cloud to Color(0xFF00897B)
+    BadgeBook.DAYS_7 -> Icons.Default.CalendarMonth to Color(0xFF1E88E5)
+    else -> {
+        val step = id.removePrefix("act_").toIntOrNull() ?: 0
+        activityMarks[Math.floorMod(step / 10, activityMarks.size)]
+    }
+}
+
 @Composable
 fun BadgeMark(id: String, size: Dp, modifier: Modifier = Modifier) {
-    val color = when {
-        id == BadgeBook.SCAN_1 -> Color(0xFFFFC107)
-        id == BadgeBook.SCAN_5 -> Color(0xFF7C4DFF)
-        id == BadgeBook.SIZE_100 -> Color(0xFF26A69A)
-        id == BadgeBook.DAYS_7 -> Color(0xFF42A5F5)
-        id.startsWith("act_") -> Color(0xFFFF7043)
-        else -> Color(0xFFB0BEC5)
-    }
-    val mark = when (id) {
-        BadgeBook.SCAN_1 -> "★"
-        BadgeBook.SCAN_5 -> "5"
-        BadgeBook.SIZE_100 -> "MB"
-        BadgeBook.DAYS_7 -> "7"
-        else -> id.removePrefix("act_")
-    }
+    val (icon, color) = badgeStyle(id)
     Box(
-        modifier.size(size).clip(CircleShape).background(color),
+        modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Brush.linearGradient(listOf(color, color.copy(alpha = 0.72f))))
+            .border(1.dp, Color.White.copy(alpha = 0.55f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            mark,
-            color = Color.Black,
-            fontWeight = FontWeight.Bold,
-            fontSize = (size.value * if (mark.length > 3) 0.28f else 0.38f).sp,
-            maxLines = 1,
-            softWrap = false,
-        )
+        Icon(icon, contentDescription = BadgeBook.title(id), tint = Color.White, modifier = Modifier.size(size * 0.56f))
     }
 }
 

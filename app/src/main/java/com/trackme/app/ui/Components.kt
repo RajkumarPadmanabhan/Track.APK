@@ -67,6 +67,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.Screen
 import com.trackme.app.data.Platform
+import com.trackme.app.data.TrackedAccount
+import com.trackme.app.data.siteKey
 
 // ---------- Palette (taken from the reference designs) ----------
 
@@ -95,6 +97,28 @@ val Platform.cardColor: Color
         Platform.FLIPKART -> Color(0xFFFFE14A)
         Platform.PORTFOLIO -> Color(0xFF6EE7B7)
     }
+
+private val otherSiteColors = listOf(
+    Color(0xFF6EE7B7),
+    Color(0xFFFFC1A6),
+    Color(0xFFE6E6EA),
+    Color(0xFFD7C4F5),
+    Color(0xFFB7E4C7),
+    Color(0xFFFFE08A),
+    Color(0xFFA8D8FF),
+    Color(0xFFFFB4C8),
+)
+
+/** Same site keeps one colour. Other websites each keep their own. */
+fun TrackedAccount.siteColor(): Color {
+    if (platform != Platform.PORTFOLIO) return platform.cardColor
+    val host = siteKey().removePrefix("web:")
+    return when {
+        "reddit" in host -> Color(0xFFFFC1A6)
+        "threads" in host -> Color(0xFFE6E6EA)
+        else -> otherSiteColors[Math.floorMod(host.hashCode(), otherSiteColors.size)]
+    }
+}
 
 /** Two-letter mark shown in the round badge (no trademarked logos are bundled). */
 val Platform.badge: String
@@ -254,22 +278,18 @@ fun WaveformBars(
 
 enum class GraphKind { CURVE, WAVE, BARS, STEPS, DOTS, SPIKE }
 
-/** Each platform draws a different chart. A flat saved count still gets that shape, not a solid block. */
-fun graphKind(platform: Platform): GraphKind = when (platform) {
-    Platform.YOUTUBE -> GraphKind.CURVE
-    Platform.INSTAGRAM -> GraphKind.WAVE
-    Platform.LINKEDIN -> GraphKind.STEPS
-    Platform.FACEBOOK -> GraphKind.DOTS
-    Platform.X -> GraphKind.SPIKE
-    Platform.GITHUB -> GraphKind.SPIKE
-    Platform.GITLAB -> GraphKind.BARS
-    else -> GraphKind.CURVE
+/** A different chart for every saved link, including two links from the same site. */
+fun graphKind(accountId: String, siblingIndex: Int = 0): GraphKind {
+    val kinds = GraphKind.entries
+    var hash = siblingIndex
+    for (c in accountId) hash = hash * 31 + c.code
+    return kinds[Math.floorMod(hash, kinds.size)]
 }
 
-private fun graphSeries(values: List<Float>, kind: GraphKind): List<Float> {
+private fun graphSeries(values: List<Float>, kind: GraphKind, salt: Int): List<Float> {
     val usable = values.filter { it > 0f }
     if (usable.size >= 2 && usable.max() > usable.min()) return values
-    return when (kind) {
+    val motif = when (kind) {
         GraphKind.CURVE -> listOf(0.08f, 0.14f, 0.22f, 0.34f, 0.48f, 0.62f, 0.74f, 0.84f, 0.9f, 0.94f, 0.97f, 0.99f, 1f)
         GraphKind.WAVE -> listOf(0.32f, 0.58f, 0.9f, 0.68f, 0.36f, 0.52f, 0.86f, 0.7f, 0.4f, 0.64f, 0.96f, 0.74f, 0.46f, 0.82f)
         GraphKind.STEPS -> listOf(0.16f, 0.16f, 0.34f, 0.34f, 0.34f, 0.54f, 0.54f, 0.72f, 0.72f, 0.72f, 0.9f, 0.9f, 1f, 1f)
@@ -277,12 +297,20 @@ private fun graphSeries(values: List<Float>, kind: GraphKind): List<Float> {
         GraphKind.SPIKE -> listOf(0.12f, 0.2f, 0.86f, 0.18f, 0.16f, 0.52f, 1f, 0.22f, 0.14f, 0.64f, 0.28f, 0.92f, 0.26f, 0.48f)
         GraphKind.BARS -> listOf(0.2f, 0.35f, 0.55f, 0.28f, 0.7f, 0.42f, 0.9f, 0.38f, 0.62f, 1f, 0.48f, 0.76f, 0.33f, 0.58f)
     }
+    val shift = Math.floorMod(salt, motif.size)
+    return motif.drop(shift) + motif.take(shift)
 }
 
 @Composable
-fun CountChart(values: List<Float>, modifier: Modifier, color: Color, kind: GraphKind = GraphKind.CURVE) {
+fun CountChart(
+    values: List<Float>,
+    modifier: Modifier,
+    color: Color,
+    kind: GraphKind = GraphKind.CURVE,
+    salt: Int = 0,
+) {
     Canvas(modifier) {
-        val series = graphSeries(values, kind)
+        val series = graphSeries(values, kind, salt)
         if (series.size < 2) return@Canvas
         val min = series.min()
         val max = series.max()

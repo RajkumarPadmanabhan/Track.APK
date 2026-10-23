@@ -24,6 +24,7 @@ import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.Store
 import com.trackme.app.data.Sync
 import com.trackme.app.data.TrackedAccount
+import com.trackme.app.data.siteKey
 import com.trackme.app.data.UserSession
 import com.trackme.app.data.detectPlatform
 import com.trackme.app.data.mergeWith
@@ -1047,6 +1048,27 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         accounts = accounts.map {
             if (it.id == id) it.copy(count = value, history = it.history + (today to value)) else it
         }
+        persist()
+    }
+
+    fun moveSite(siteKey: String, forward: Boolean) {
+        val platformAccounts = accounts.filter { !it.asApp }
+        val keys = platformAccounts.map { it.siteKey() }.distinct()
+        val index = keys.indexOf(siteKey)
+        val swapWith = if (forward) index - 1 else index + 1
+        if (index < 0 || swapWith !in keys.indices) return
+        val nextKeys = keys.toMutableList()
+        val moved = nextKeys.removeAt(index)
+        nextKeys.add(swapWith, moved)
+        val byKey = platformAccounts.groupBy { it.siteKey() }
+        val reordered = nextKeys.flatMap { byKey[it].orEmpty() }
+        if (reordered.size != platformAccounts.size) return
+        val next = ArrayList<TrackedAccount>(accounts.size)
+        var cursor = 0
+        for (acc in accounts) {
+            if (acc.asApp) next.add(acc) else next.add(reordered[cursor++])
+        }
+        accounts = next
         persist()
     }
 

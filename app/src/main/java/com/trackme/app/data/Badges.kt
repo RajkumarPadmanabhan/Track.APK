@@ -21,12 +21,20 @@ object BadgeBook {
 
     fun activityId(thousands: Int) = "$ACT$thousands"
 
+    fun rank(id: String): Int = when (id) {
+        SCAN_1 -> 0
+        SCAN_5 -> 1
+        SIZE_100 -> 2
+        DAYS_7 -> 3
+        else -> 10 + (id.removePrefix(ACT).toIntOrNull() ?: 99)
+    }
+
     fun title(id: String): String = when (id) {
         SCAN_1 -> "First achievement"
         SCAN_5 -> "Second achievement"
         SIZE_100 -> "100 MB"
         DAYS_7 -> "7 days"
-        else -> if (id.startsWith(ACT)) "${id.removePrefix(ACT)}k activity" else "Badge"
+        else -> if (id.startsWith(ACT)) "Activity milestone" else "Badge"
     }
 
     fun detail(id: String): String = when (id) {
@@ -67,7 +75,7 @@ object BadgeBook {
     fun showcase(earned: List<EarnedBadge>, activity: Long): List<Pair<EarnedBadge?, String>> {
         val have = earned.associateBy { it.id }
         val rows = ArrayList<Pair<EarnedBadge?, String>>()
-        earned.sortedBy { it.earnedAt }.forEach { rows += it to it.id }
+        earned.sortedBy { rank(it.id) }.forEach { rows += it to it.id }
         listOf(SCAN_1, SCAN_5, SIZE_100, DAYS_7).forEach { id ->
             if (id !in have) rows += null to id
         }

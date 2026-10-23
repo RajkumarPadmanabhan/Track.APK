@@ -27,7 +27,18 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import kotlin.random.Random
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.LocalFireDepartment
@@ -85,6 +96,8 @@ import com.trackme.app.Screen
 import com.trackme.app.TrackViewModel
 import com.trackme.app.data.Days
 import com.trackme.app.data.TrackedAccount
+import com.trackme.app.data.siteKey
+import com.trackme.app.data.siteLabel
 import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.compactCount
 import com.trackme.app.data.formatRupees
@@ -98,6 +111,54 @@ import com.trackme.app.data.weekEvents
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+
+private data class RainDrop(
+    val x: Float,
+    val y: Float,
+    val length: Float,
+    val speed: Float,
+    val alpha: Float,
+)
+
+@Composable
+private fun RainEffect(modifier: Modifier = Modifier, dropCount: Int = 40) {
+    val infiniteTransition = rememberInfiniteTransition(label = "rain")
+    val time by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1600, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "rainTime",
+    )
+    val drops = remember {
+        List(dropCount) {
+            RainDrop(
+                x = Random.nextFloat(),
+                y = Random.nextFloat(),
+                length = 20f + Random.nextFloat() * 30f,
+                speed = 0.55f + Random.nextFloat() * 0.9f,
+                alpha = 0.28f + Random.nextFloat() * 0.35f,
+            )
+        }
+    }
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        drops.forEach { drop ->
+            val startX = drop.x * w
+            val startY = ((drop.y + time * drop.speed) % 1f) * h
+            drawLine(
+                color = Color(0xFF80D8FF).copy(alpha = drop.alpha),
+                start = Offset(startX, startY),
+                end = Offset(startX - drop.length * 0.2f, startY + drop.length),
+                strokeWidth = 2.5f,
+                cap = StrokeCap.Round,
+            )
+        }
+    }
+}
 
 private fun greetingWithSymbol(): Pair<String, String> {
     val cal = Calendar.getInstance()
@@ -128,6 +189,7 @@ fun HomeScreen(vm: TrackViewModel) {
     // Pull today's numbers when the home page opens (skipped if they are fresh).
     LaunchedEffect(accounts.size) { vm.refreshAccounts() }
 
+    var isRaining by remember { mutableStateOf(false) }
     var isGridView by remember { mutableStateOf(false) }
     var showBadges by remember { mutableStateOf(false) }
     var appSearch by remember { mutableStateOf(false) }
@@ -136,11 +198,20 @@ fun HomeScreen(vm: TrackViewModel) {
     val context = LocalContext.current
     var selectedGroupForPopup by remember { mutableStateOf<List<TrackedAccount>?>(null) }
 
+    LaunchedEffect(Unit) {
+        isRaining = com.trackme.app.data.WeatherApi.checkIsRaining()
+    }
+
     val yearContributions = remember(combined) { combined.values.sum() }
     val totalSubscribers = remember(accounts) { accounts.filter { !it.isHidden }.sumOf { it.count ?: 0L } }
     val totalGrowth = yearContributions.toLong() + totalSubscribers
 
+    val siteGroups = platformAccounts.distinctBy { it.id }.siteGroups()
+
     Box(modifier = Modifier.fillMaxSize()) {
+        if (isRaining) {
+            RainEffect(modifier = Modifier.fillMaxSize())
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -303,15 +374,24 @@ fun HomeScreen(vm: TrackViewModel) {
 
             if (platformAccounts.isEmpty() && appAccounts.isEmpty()) {
                 item { EmptyTags(onScan = { vm.openAdd() }) }
-            } else if (isGridView && platformAccounts.isNotEmpty()) {
-                val gridGroups = platformAccounts.distinctBy { it.id }.groupBy { it.platform }.values.toList()
+            } else if (isGridView && siteGroups.isNotEmpty()) {
                 items(
-                    items = gridGroups.chunked(2),
-                    key = { pair -> "grid-" + pair.joinToString("-") { it.firstOrNull()?.id ?: "x" } },
+                    items = siteGroups.chunked(2),
+                    key = { pair -> "grid-" + pair.joinToString("-") { it.firstOrNull()?.siteKey() ?: "x" } },
                 ) { pair ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         pair.forEach { group ->
-                            Box(Modifier.weight(1f)) {
+                            val key = group.first().siteKey()
+                            val index = siteGroups.indexOfFirst { it.first().siteKey() == key }
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                SiteGroupBar(
+                                    label = group.first().siteLabel(),
+                                    count = group.size,
+                                    canForward = index > 0,
+                                    canBack = index in 0 until siteGroups.lastIndex,
+                                    onForward = { vm.moveSite(key, forward = true) },
+                                    onBack = { vm.moveSite(key, forward = false) },
+                                )
                                 if (group.size == 1) {
                                     GridAccountCard(group.first(), onToggleVisibility = { vm.toggleAccountVisibility(group.first().id) }) { vm.openAccount(group.first().id) }
                                 } else {
@@ -322,8 +402,27 @@ fun HomeScreen(vm: TrackViewModel) {
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
-            } else if (platformAccounts.isNotEmpty()) {
-                items(platformAccounts.distinctBy { it.id }, key = { it.id }) { acc -> AccountCard(acc, onToggleVisibility = { vm.toggleAccountVisibility(acc.id) }) { vm.openAccount(acc.id) } }
+            } else if (siteGroups.isNotEmpty()) {
+                siteGroups.forEachIndexed { index, group ->
+                    val key = group.first().siteKey()
+                    item(key = "site-$key") {
+                        SiteGroupBar(
+                            label = group.first().siteLabel(),
+                            count = group.size,
+                            canForward = index > 0,
+                            canBack = index < siteGroups.lastIndex,
+                            onForward = { vm.moveSite(key, forward = true) },
+                            onBack = { vm.moveSite(key, forward = false) },
+                        )
+                    }
+                    items(group, key = { it.id }) { acc ->
+                        AccountCard(
+                            acc,
+                            graphIndex = group.indexOfFirst { it.id == acc.id },
+                            onToggleVisibility = { vm.toggleAccountVisibility(acc.id) },
+                        ) { vm.openAccount(acc.id) }
+                    }
+                }
             }
 
             item { Spacer(Modifier.height(8.dp)) }
@@ -962,7 +1061,41 @@ private fun cardModel(a: TrackedAccount): CardModel {
 }
 
 @Composable
-private fun AccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onClick: () -> Unit) {
+private fun List<TrackedAccount>.siteGroups(): List<List<TrackedAccount>> {
+    val map = LinkedHashMap<String, MutableList<TrackedAccount>>()
+    for (acc in this) map.getOrPut(acc.siteKey()) { mutableListOf() }.add(acc)
+    return map.values.toList()
+}
+
+@Composable
+private fun SiteGroupBar(
+    label: String,
+    count: Int,
+    canForward: Boolean,
+    canBack: Boolean,
+    onForward: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(label, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        if (count > 1) {
+            Text("$count", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.width(4.dp))
+        }
+        IconButton(onClick = onForward, enabled = canForward, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move forward", modifier = Modifier.size(20.dp))
+        }
+        IconButton(onClick = onBack, enabled = canBack, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move back", modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+@Composable
+private fun AccountCard(acc: TrackedAccount, graphIndex: Int = 0, onToggleVisibility: () -> Unit, onClick: () -> Unit) {
     val m = remember(acc) { cardModel(acc) }
     val ink = Brand.Ink
     val notchW = 188.dp
@@ -974,7 +1107,7 @@ private fun AccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onC
             Modifier
                 .fillMaxSize()
                 .clip(shape)
-                .background(acc.platform.cardColor)
+                .background(acc.siteColor())
                 .clickable(onClick = onClick),
         ) {
             Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 16.dp)) {
@@ -1010,7 +1143,7 @@ private fun AccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onC
                             Spacer(Modifier.height(4.dp))
                             Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
                         }
-                        CountChart(m.spark, Modifier.width(136.dp).height(74.dp), ink, graphKind(acc.platform))
+                        CountChart(m.spark, Modifier.width(136.dp).height(74.dp), ink, graphKind(acc.id, graphIndex), acc.id.hashCode())
                     }
                 }
             }
@@ -1074,7 +1207,7 @@ private fun GridAccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit,
             .fillMaxWidth()
             .height(170.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(acc.platform.cardColor)
+            .background(acc.siteColor())
             .clickable(onClick = onClick)
             .padding(14.dp),
         verticalArrangement = Arrangement.SpaceBetween,
@@ -1135,7 +1268,7 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
                 .offset(x = (-8).dp, y = 8.dp)
                 .rotate(-6f)
                 .clip(RoundedCornerShape(28.dp))
-                .background(acc.platform.cardColor.copy(alpha = 0.45f))
+                .background(acc.siteColor().copy(alpha = 0.45f))
         )
         Box(
             Modifier
@@ -1144,14 +1277,14 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
                 .offset(x = 6.dp, y = 2.dp)
                 .rotate(4f)
                 .clip(RoundedCornerShape(28.dp))
-                .background(acc.platform.cardColor.copy(alpha = 0.7f))
+                .background(acc.siteColor().copy(alpha = 0.7f))
         )
         Column(
             Modifier
                 .fillMaxWidth()
                 .height(170.dp)
                 .clip(RoundedCornerShape(28.dp))
-                .background(acc.platform.cardColor)
+                .background(acc.siteColor())
                 .clickable(onClick = onClick)
                 .padding(14.dp),
             verticalArrangement = Arrangement.SpaceBetween,

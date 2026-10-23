@@ -190,20 +190,22 @@ fun ProfileScreen(vm: TrackViewModel) {
                     ProfileStat(vm.accounts.size.toString(), "Tags")
                     ProfileStat(compactCount(activityTotal), "Activity")
                     ProfileStat(formatBytes(vm.totalUploadedBytes), "Size")
-                    val pinned = vm.pinnedBadgeIds.mapNotNull { id -> vm.earnedBadges.firstOrNull { it.id == id } }
-                    if (pinned.isNotEmpty()) {
-                        Row(
-                            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            pinned.forEach { badge ->
-                                BadgeMark(
-                                    badge.id,
-                                    28.dp,
-                                    modifier = Modifier.clickable { showBadges = true },
-                                )
-                            }
+                }
+                val pinned = vm.pinnedBadgeIds
+                    .mapNotNull { id -> vm.earnedBadges.firstOrNull { it.id == id } }
+                    .sortedBy { com.trackme.app.data.BadgeBook.rank(it.id) }
+                if (pinned.isNotEmpty()) {
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        pinned.forEach { badge ->
+                            BadgeMark(
+                                badge.id,
+                                36.dp,
+                                modifier = Modifier.clickable { showBadges = true },
+                            )
                         }
                     }
                 }
