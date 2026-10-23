@@ -61,8 +61,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     var screen by mutableStateOf(Screen.HOME)
     var showAdd by mutableStateOf(false)
     var detailId by mutableStateOf<String?>(null)
-    // Day (yyyy-MM-dd) on which the home-page git activity card was skipped
-    var gitSkipDay by mutableStateOf(prefs.getString("git_skip", "") ?: "")
+    // Contribution count when the home-page git activity card was skipped (-1 if not skipped)
+    var gitSkippedContributions by mutableStateOf(prefs.getInt("git_skipped_contributions", -1))
         private set
     var refreshing by mutableStateOf(false)
         private set
@@ -132,7 +132,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     // App Update State
-    var currentAppVersion by mutableStateOf("1.2.2")
+    var currentAppVersion by mutableStateOf("1.2.3")
         private set
     var isCheckingAppUpdate by mutableStateOf(false)
         private set
@@ -349,9 +349,9 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         session?.let { Store.saveAccounts(prefs, it.email, accounts) }
     }
 
-    fun skipGitToday() {
-        gitSkipDay = Days.key()
-        prefs.edit().putString("git_skip", gitSkipDay).apply()
+    fun skipGit(totalContributions: Int) {
+        gitSkippedContributions = totalContributions
+        prefs.edit().putInt("git_skipped_contributions", totalContributions).apply()
     }
 
     fun openAdd() {
@@ -399,8 +399,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         }
         accounts = accounts.distinctBy { it.id }
         if (draft.platform.fullScan) {
-            gitSkipDay = ""
-            prefs.edit().putString("git_skip", "").apply()
+            gitSkippedContributions = -1
+            prefs.edit().remove("git_skipped_contributions").apply()
         }
         persist()
         closeAdd()
@@ -562,8 +562,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         user = u
         repos = r
         activity = a
-        gitSkipDay = ""
-        prefs.edit().putString("git_skip", "").apply()
+        gitSkippedContributions = -1
+        prefs.edit().remove("git_skipped_contributions").apply()
         language = null
         query = ""
         checkCrossAccountDuplicate()

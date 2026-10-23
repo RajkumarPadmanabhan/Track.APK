@@ -172,11 +172,16 @@ fun HomeScreen(vm: TrackViewModel) {
         vm.loadPersonalizedNews(userPlatforms)
     }
 
+    var isRaining by remember { mutableStateOf(false) }
+    var isGridView by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        isRaining = com.trackme.app.data.WeatherApi.checkIsRaining()
+    }
+
     val yearContributions = remember(combined) { combined.values.sum() }
     val totalSubscribers = remember(accounts) { accounts.sumOf { it.count ?: 0L } }
     val totalGrowth = yearContributions.toLong() + totalSubscribers
-    var isGridView by remember { mutableStateOf(false) }
-    var isRaining by remember { mutableStateOf(false) }
 
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
@@ -188,8 +193,6 @@ fun HomeScreen(vm: TrackViewModel) {
                 Header(
                     name = session.name,
                     avatarUrl = session.avatarUrl,
-                    isRaining = isRaining,
-                    onToggleRain = { isRaining = !isRaining },
                     onProfile = { vm.screen = Screen.PROFILE }
                 )
             }
@@ -224,8 +227,10 @@ fun HomeScreen(vm: TrackViewModel) {
             item { HeroTile(totalGrowth, accounts.size, combined) }
 
             if (hasGit || combined.isNotEmpty()) {
-                if (vm.gitSkipDay != Days.key()) {
-                    item { HeatmapTile(combined, onSkip = { vm.skipGitToday() }) }
+                val totalGitContributions = combined.values.sum()
+                val isSkippedAndNoNewActivity = vm.gitSkippedContributions != -1 && totalGitContributions <= vm.gitSkippedContributions
+                if (!isSkippedAndNoNewActivity) {
+                    item { HeatmapTile(combined, onSkip = { vm.skipGit(totalGitContributions) }) }
                 }
             }
 
@@ -334,8 +339,6 @@ fun HomeScreen(vm: TrackViewModel) {
 private fun Header(
     name: String,
     avatarUrl: String?,
-    isRaining: Boolean,
-    onToggleRain: () -> Unit,
     onProfile: () -> Unit
 ) {
     val first = name.trim().substringBefore(" ").ifBlank { "there" }
@@ -346,24 +349,7 @@ private fun Header(
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("$greetingText $symbol,", fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.Medium)
-                Spacer(Modifier.width(8.dp))
-                Box(
-                    Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(if (isRaining) Color(0xFF0288D1) else Color.White.copy(alpha = 0.12f))
-                        .clickable(onClick = onToggleRain)
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        if (isRaining) "🌧️ Rain" else "🌧️ Weather",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isRaining) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
+            Text("$greetingText $symbol,", fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.Medium)
             Text(
                 first,
                 fontSize = 38.sp,

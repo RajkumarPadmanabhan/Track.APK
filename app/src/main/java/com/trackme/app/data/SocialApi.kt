@@ -170,30 +170,47 @@ object SocialApi {
     }
 
     private fun parseLinkedIn(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
+        val desc = og["description"].orEmpty()
+        val followerMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+(followers|members)", Pattern.CASE_INSENSITIVE).matcher(desc)
+        val connMatcher = Pattern.compile("([0-9.,KkMm]+)\\+?\\s+connections", Pattern.CASE_INSENSITIVE).matcher(desc)
+
+        val followers = if (followerMatcher.find()) followerMatcher.group(1) else null
+        val connections = if (connMatcher.find()) connMatcher.group(1) else null
+
+        val stats = mutableListOf<Pair<String, String>>()
+        followers?.let { stats.add("Followers" to it) }
+        connections?.let { stats.add("Connections" to it) }
+
         val clean = title.substringBefore(" | LinkedIn").trim()
         val name = clean.substringBefore(" - ").ifBlank { profile.handle }
-        val headline = clean.substringAfter(" - ", "").ifBlank { null }
         return PublicProfile(
             name = name,
-            handle = profile.handle,
-            subtitle = headline,
-            description = og["description"]?.take(300)?.ifBlank { null },
+            handle = "@${profile.handle.trimStart('@')}",
+            subtitle = null,
+            description = null,
             imageUrl = og["image"],
-            stats = emptyList(),
+            stats = stats,
         )
     }
 
     private fun parseFacebook(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
         val desc = og["description"].orEmpty()
-        val matcher = Pattern.compile("([0-9.,KkMm]+)\\s+(likes|people follow this|followers)").matcher(desc)
-        val followers = if (matcher.find()) matcher.group(1) else null
-        val stats = if (followers != null) listOf("Followers" to followers) else emptyList()
+        val followerMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+(followers|people follow this)", Pattern.CASE_INSENSITIVE).matcher(desc)
+        val likeMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+likes", Pattern.CASE_INSENSITIVE).matcher(desc)
+
+        val followers = if (followerMatcher.find()) followerMatcher.group(1) else null
+        val likes = if (likeMatcher.find()) likeMatcher.group(1) else null
+
+        val stats = mutableListOf<Pair<String, String>>()
+        followers?.let { stats.add("Followers" to it) }
+        likes?.let { stats.add("Likes" to it) }
+
         val name = title.substringBefore(" | Facebook").substringBefore(" - Home").trim().ifBlank { profile.handle }
         return PublicProfile(
             name = name,
-            handle = profile.handle,
+            handle = "@${profile.handle.trimStart('@')}",
             subtitle = null,
-            description = og["description"]?.take(300)?.ifBlank { null },
+            description = null,
             imageUrl = og["image"],
             stats = stats,
         )
@@ -212,7 +229,7 @@ object SocialApi {
         conn.instanceFollowRedirects = true
         conn.connectTimeout = 15000
         conn.readTimeout = 20000
-        val ua = if (platform == Platform.INSTAGRAM || platform == Platform.FACEBOOK) {
+        val ua = if (platform == Platform.INSTAGRAM || platform == Platform.FACEBOOK || platform == Platform.LINKEDIN) {
             "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
         } else {
             "Mozilla/5.0 (Linux; Android 13; TrackMe) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"

@@ -186,20 +186,22 @@ fun TrackedAccount.eventsOn(offset: Int): Int = activity[Days.key(offset)] ?: 0
 
 fun TrackedAccount.weekEvents(): Int = (0..6).sumOf { eventsOn(-it) }
 
-/** Seven bars (oldest to newest), each 0..1, for the mini chart on the home card. */
+/** Seven bars (oldest to newest), each 0..1, representing Followers/Subscribers count history over time. */
 fun TrackedAccount.spark(days: Int = 7): List<Float> {
-    if (platform.fullScan) {
-        val raw = (days - 1 downTo 0).map { eventsOn(-it).toFloat() }
-        val max = raw.maxOrNull() ?: 0f
-        return if (max <= 0f) raw.map { 0f } else raw.map { it / max }
-    }
     val keys = history.keys.sorted()
     val values = (days - 1 downTo 0).map { off ->
         val day = Days.key(-off)
         keys.lastOrNull { it <= day }?.let { history[it] }
     }
     val known = values.filterNotNull()
-    if (known.isEmpty()) return values.map { 0f }
+    if (known.isEmpty()) {
+        if (platform.fullScan) {
+            val raw = (days - 1 downTo 0).map { eventsOn(-it).toFloat() }
+            val max = raw.maxOrNull() ?: 0f
+            return if (max <= 0f) raw.map { 0f } else raw.map { it / max }
+        }
+        return values.map { 0f }
+    }
     val min = known.minOrNull() ?: 0L
     val max = known.maxOrNull() ?: 0L
     return values.map { v ->
