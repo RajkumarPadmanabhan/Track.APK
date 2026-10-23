@@ -135,16 +135,25 @@ object SocialApi {
         }
 
     private fun parsePortfolio(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
-        val siteName = og["site_name"]?.ifBlank { null }
+        val desc = og["description"].orEmpty()
+        val followerMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+(followers|members|subscribers)", Pattern.CASE_INSENSITIVE).matcher(desc)
+        val followingMatcher = Pattern.compile("([0-9.,KkMm]+)\\s+(following|connections)", Pattern.CASE_INSENSITIVE).matcher(desc)
+
+        val followers = if (followerMatcher.find()) followerMatcher.group(1) else null
+        val following = if (followingMatcher.find()) followingMatcher.group(1) else null
+
+        val stats = mutableListOf<Pair<String, String>>()
+        if (!followers.isNullOrBlank()) stats.add("Followers" to followers)
+        if (!following.isNullOrBlank()) stats.add("Following" to following)
+
         val name = title.ifBlank { profile.handle }
-        val description = og["description"]?.take(300)?.ifBlank { null }
         return PublicProfile(
             name = name,
-            handle = profile.handle,
-            subtitle = siteName ?: profile.url.removePrefix("https://").removePrefix("http://"),
-            description = description ?: "Personal Portfolio Website",
+            handle = "@${profile.handle.trimStart('@')}",
+            subtitle = null,
+            description = null,
             imageUrl = og["image"],
-            stats = listOf("Status" to "Online"),
+            stats = stats,
         )
     }
 

@@ -112,24 +112,34 @@ class NotchShape(
     private val notchHeight: Dp,
 ) : Shape {
     override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val c = with(density) { corner.toPx() }
         val w = size.width
         val h = size.height
-        val nw = with(density) { notchWidth.toPx() }.coerceIn(c * 2, w - c * 2)
-        val nh = with(density) { notchHeight.toPx() }.coerceIn(c, h - c * 2)
+        if (w <= 0f || h <= 0f) {
+            return Outline.Rectangle(androidx.compose.ui.geometry.Rect(0f, 0f, w.coerceAtLeast(0f), h.coerceAtLeast(0f)))
+        }
+
+        val c = with(density) { corner.toPx() }.coerceAtMost(minOf(w, h) / 2f)
+        val minW = (c * 2f).coerceAtMost(w)
+        val maxW = (w - c * 2f).coerceAtLeast(minW)
+        val nw = with(density) { notchWidth.toPx() }.coerceIn(minW, maxW)
+
+        val minH = c.coerceAtMost(h)
+        val maxH = (h - c * 2f).coerceAtLeast(minH)
+        val nh = with(density) { notchHeight.toPx() }.coerceIn(minH, maxH)
+
         val f = c * 0.7f
         val path = Path().apply {
             moveTo(c, 0f)
-            lineTo(w - c, 0f)
+            lineTo((w - c).coerceAtLeast(c), 0f)
             quadraticBezierTo(w, 0f, w, c)
-            lineTo(w, h - c)
-            quadraticBezierTo(w, h, w - c, h)
-            lineTo(nw + f, h)
-            quadraticBezierTo(nw, h, nw, h - f)
-            lineTo(nw, h - nh + f)
-            quadraticBezierTo(nw, h - nh, nw - f, h - nh)
-            lineTo(c, h - nh)
-            quadraticBezierTo(0f, h - nh, 0f, h - nh - c)
+            lineTo(w, (h - c).coerceAtLeast(c))
+            quadraticBezierTo(w, h, (w - c).coerceAtLeast(c), h)
+            lineTo((nw + f).coerceAtMost(w), h)
+            quadraticBezierTo(nw, h, nw, (h - f).coerceAtLeast(0f))
+            lineTo(nw, (h - nh + f).coerceIn(0f, h))
+            quadraticBezierTo(nw, (h - nh).coerceIn(0f, h), (nw - f).coerceAtLeast(0f), (h - nh).coerceIn(0f, h))
+            lineTo(c, (h - nh).coerceIn(0f, h))
+            quadraticBezierTo(0f, (h - nh).coerceIn(0f, h), 0f, (h - nh - c).coerceIn(0f, h))
             lineTo(0f, c)
             quadraticBezierTo(0f, 0f, c, 0f)
             close()

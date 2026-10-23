@@ -132,7 +132,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     // App Update State
-    var currentAppVersion by mutableStateOf("1.2.3")
+    var currentAppVersion by mutableStateOf("1.2.4")
         private set
     var isCheckingAppUpdate by mutableStateOf(false)
         private set

@@ -520,7 +520,7 @@ private fun cardModel(a: TrackedAccount): CardModel {
     }
     val delta = a.deltaToday()
     val (value, tone) = when {
-        a.count == null -> "Set count" to Tone.FLAT
+        a.count == null -> "Saved" to Tone.FLAT
         delta == null -> "First day" to Tone.FLAT
         delta > 0 -> "+${compactCount(delta)}" to Tone.UP
         delta < 0 -> "-${compactCount(-delta)}" to Tone.DOWN
@@ -529,11 +529,13 @@ private fun cardModel(a: TrackedAccount): CardModel {
     val filteredExtras = when (a.platform) {
         Platform.YOUTUBE -> a.extras.filter { it.first == "Videos" }
         Platform.INSTAGRAM -> a.extras.filter { it.first == "Following" }
-        else -> a.extras.take(2)
+        Platform.FACEBOOK -> a.extras.filter { it.first == "Likes" || it.first == "Following" }
+        Platform.LINKEDIN -> a.extras.filter { it.first == "Connections" || it.first == "Members" }
+        else -> a.extras.filter { it.first == "Followers" || it.first == "Following" || it.first == "Connections" }
     }
     return CardModel(
-        big = a.count?.let { compactCount(it) } ?: "—",
-        bigLabel = a.countLabel,
+        big = a.count?.let { compactCount(it) } ?: "Active",
+        bigLabel = if (a.count != null) a.countLabel else "Status",
         spark = a.spark(),
         panelLabel = "Today",
         panelValue = value,
