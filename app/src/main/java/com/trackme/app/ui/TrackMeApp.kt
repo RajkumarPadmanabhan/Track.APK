@@ -442,9 +442,21 @@ private fun LinkProfileCard(
             if (stats.isNotEmpty()) PreviewCard(preview.copy(stats = stats))
         }
         val savedCount = account?.count?.takeIf { it > 0L && (preview?.stats?.isEmpty() != false) }
-        if (savedCount != null && (platform == Platform.LINKEDIN || platform == Platform.FACEBOOK || platform == Platform.INSTAGRAM || platform == Platform.X)) {
-            Text(compactCount(savedCount), fontSize = 36.sp, fontWeight = FontWeight.Bold)
-            Text(account?.countLabel?.ifBlank { "Followers" } ?: "Followers", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (savedCount != null && (platform == Platform.LINKEDIN || platform == Platform.FACEBOOK || platform == Platform.INSTAGRAM || platform == Platform.X || platform == Platform.YOUTUBE)) {
+            Text(compactCount(savedCount), fontSize = 36.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+            Text(
+                account?.countLabel?.ifBlank { if (platform == Platform.YOUTUBE) "Subscribers" else "Followers" }
+                    ?: if (platform == Platform.YOUTUBE) "Subscribers" else "Followers",
+                fontSize = 13.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            if (platform == Platform.YOUTUBE) {
+                account?.extras?.filter { (label, value) ->
+                    (label == "Videos" || label == "Views") && value.isNotBlank() && value != "0"
+                }?.forEach { (label, value) ->
+                    Text("$value $label", fontSize = 14.sp, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                }
+            }
         }
         val shop = preview?.shop?.takeIf { it.isNotEmpty() } ?: shopEntries(account)
         val shopEmail = account?.linkedEmail?.trim()?.takeIf {

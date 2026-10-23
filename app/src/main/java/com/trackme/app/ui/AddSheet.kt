@@ -153,8 +153,10 @@ fun AddTagSheet(vm: TrackViewModel) {
             OutlinedTextField(
                 value = vm.input,
                 onValueChange = {
-                    vm.input = it
-                    vm.suggestAppName(it)
+                    if (p == Platform.YOUTUBE) vm.onYoutubeInput(it) else {
+                        vm.input = it
+                        vm.suggestAppName(it)
+                    }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
@@ -195,14 +197,45 @@ fun AddTagSheet(vm: TrackViewModel) {
             }
 
             if (!vm.makeAsApp && p == Platform.YOUTUBE) {
-                OutlinedTextField(
-                    value = vm.youtubeKey,
-                    onValueChange = { vm.updateYoutubeKey(it) },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(20.dp),
-                    label = { Text("YouTube API key (free, from Google Cloud)") },
-                )
+                if (vm.youtubeKey.isNotBlank() && !vm.editingYoutubeKey) {
+                    Text(
+                        "API key saved on this phone. Paste the next channel link above and tap Scan. Every channel uses this same key.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    OutlinedButton(
+                        onClick = { vm.editingYoutubeKey = true },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(50),
+                    ) { Text("Replace API key") }
+                } else {
+                    OutlinedTextField(
+                        value = vm.youtubeKeyDraft,
+                        onValueChange = { vm.youtubeKeyDraft = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        shape = RoundedCornerShape(20.dp),
+                        label = {
+                            Text(if (vm.youtubeKey.isBlank()) "YouTube API key" else "New YouTube API key")
+                        },
+                        placeholder = { Text("AIza…") },
+                    )
+                    Text(
+                        "Save the key once, then add as many channels as you want. Clearing this box does not remove a key that is already saved. The key is deleted only when every YouTube channel is removed.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    if (vm.youtubeKey.isNotBlank()) {
+                        OutlinedButton(
+                            onClick = {
+                                vm.youtubeKeyDraft = ""
+                                vm.editingYoutubeKey = false
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(50),
+                        ) { Text("Keep saved key") }
+                    }
+                }
             }
             if (!vm.makeAsApp) p.note?.let {
                 Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)

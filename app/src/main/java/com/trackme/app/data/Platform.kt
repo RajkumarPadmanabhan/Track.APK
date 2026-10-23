@@ -51,8 +51,7 @@ enum class Platform(
     ),
     YOUTUBE(
         "YouTube", "https://youtube.com/@channel", false,
-        "Channel stats come from the official YouTube Data API using your own free API key " +
-            "(Google Cloud Console > enable YouTube Data API v3 > create an API key).",
+        "Save one API key. Then paste each channel link and tap Scan. The same key reads every channel, and it is deleted only when the last YouTube channel is removed.",
         Regex(
             """(?:https?://)?(?:www\.)?youtube\.com/(@[A-Za-z0-9_.-]+|(?:channel|c|user)/[A-Za-z0-9_-]+)""",
             RegexOption.IGNORE_CASE,

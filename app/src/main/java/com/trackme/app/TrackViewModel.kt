@@ -95,7 +95,11 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     var error by mutableStateOf<String?>(null)
 
     // The user's own YouTube Data API key, stored on this device only.
+    // The scan box edits youtubeKeyDraft. Clearing that box does not erase a saved key.
     var youtubeKey by mutableStateOf(prefs.getString("yt_key", "") ?: "")
+        private set
+    var youtubeKeyDraft by mutableStateOf("")
+    var editingYoutubeKey by mutableStateOf(false)
 
     // App Theme Color Customization
     var themeColorName by mutableStateOf(prefs.getString("theme_color", com.trackme.app.ui.ThemeColorOption.CORAL.name) ?: com.trackme.app.ui.ThemeColorOption.CORAL.name)
@@ -328,9 +332,40 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun updateYoutubeKey(key: String) {
-        youtubeKey = key
-        prefs.edit().putString("yt_key", key.trim()).apply()
+    fun saveYoutubeKey(key: String = youtubeKeyDraft): Boolean {
+        val trimmed = key.trim()
+        if (trimmed.isBlank()) return youtubeKey.isNotBlank()
+        youtubeKey = trimmed
+        youtubeKeyDraft = ""
+        editingYoutubeKey = false
+        prefs.edit().putString("yt_key", trimmed).apply()
+        return true
+    }
+
+    /** Drops the saved key. Used only after the last YouTube channel is removed. */
+    fun clearYoutubeKey() {
+        youtubeKey = ""
+        youtubeKeyDraft = ""
+        editingYoutubeKey = false
+        prefs.edit().remove("yt_key").apply()
+    }
+
+    /** Pulls an API key out of a pasted channel link so the link box stays a link. */
+    fun onYoutubeInput(raw: String) {
+        val match = Regex("""AIza[0-9A-Za-z_-]{20,}""").find(raw)
+        if (match != null) {
+            saveYoutubeKey(match.value)
+            input = raw.removeRange(match.range).replace(Regex("\\s+"), " ").trim()
+        } else {
+            input = raw
+        }
+        suggestAppName(input)
+    }
+
+    private fun youtubeKeyForScan(): String {
+        val typed = youtubeKeyDraft.trim()
+        if (typed.isNotBlank()) saveYoutubeKey(typed)
+        return youtubeKey.trim()
     }
 
     fun selectPlatform(p: Platform) {
@@ -357,6 +392,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         appName = ""
         appNameTouched = false
         makeAsApp = false
+        youtubeKeyDraft = ""
+        editingYoutubeKey = false
     }
 
     var makeAsApp by mutableStateOf(false)
@@ -863,8 +900,12 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeAccount(id: String) {
+        val removed = accounts.firstOrNull { it.id == id }
         accounts = accounts.filter { it.id != id }
         persist()
+        val removedYoutube = removed?.platform == Platform.YOUTUBE && removed.asApp == false
+        val anyYoutubeLeft = accounts.any { it.platform == Platform.YOUTUBE && !it.asApp }
+        if (removedYoutube && !anyYoutubeLeft) clearYoutubeKey()
     }
 
     fun setManualCount(id: String, value: Long) {
@@ -1056,15 +1097,16 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Tries to read public profile details; on any failure the link card is shown with a note. */
     private fun loadPreview(p: Platform, parsed: ParsedProfile) {
-        if (p == Platform.YOUTUBE && youtubeKey.isBlank()) {
-            previewNote = "Add your free YouTube API key above to see channel stats."
+        val key = if (p == Platform.YOUTUBE) youtubeKeyForScan() else ""
+        if (p == Platform.YOUTUBE && key.isBlank()) {
+            previewNote = "Add your YouTube API key once. It is reused for every channel."
             return
         }
         loading = true
         viewModelScope.launch {
             try {
                 val result = if (p == Platform.YOUTUBE) {
-                    SocialApi.fetchYouTube(parsed, youtubeKey.trim())
+                    SocialApi.fetchYouTube(parsed, key)
                 } else {
                     SocialApi.fetchPreview(p, parsed)
                 }
