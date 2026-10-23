@@ -171,6 +171,17 @@ fun nameFromEmail(email: String): String {
 fun accountId(platform: Platform, handle: String) =
     platform.name + ":" + handle.trim().trimStart('@').lowercase()
 
+/** Same page, ignoring scheme, www, a trailing slash, and a tracking query. */
+fun sameProfileUrl(a: String, b: String): Boolean {
+    fun norm(raw: String): String {
+        val cut = raw.trim().lowercase().substringBefore('?').substringBefore('#')
+        return cut.removePrefix("https://").removePrefix("http://").removePrefix("www.").trimEnd('/')
+    }
+    val left = norm(a)
+    val right = norm(b)
+    return left.isNotBlank() && left == right
+}
+
 fun newAccount(platform: Platform, parsed: ParsedProfile, s: Snapshot): TrackedAccount {
     val today = Days.key()
     return TrackedAccount(

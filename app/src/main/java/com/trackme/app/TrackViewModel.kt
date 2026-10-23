@@ -25,6 +25,7 @@ import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.Store
 import com.trackme.app.data.Sync
 import com.trackme.app.data.TrackedAccount
+import com.trackme.app.data.sameProfileUrl
 import com.trackme.app.data.siteKey
 import com.trackme.app.data.UserSession
 import com.trackme.app.data.detectPlatform
@@ -989,6 +990,10 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             asApp = true,
             appName = label,
         )
+        if (accounts.any { it.id != id && sameProfileUrl(it.url, url) }) {
+            error = "This link is already added"
+            return false
+        }
         accounts = accounts.filter { it.id != id } + shortcut
         persist()
         closeAdd()
@@ -998,6 +1003,10 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     fun addDraft(linkedEmail: String? = null): Boolean {
         if (checkCrossAccountDuplicate()) return false
         val base = currentDraft() ?: return false
+        if (accounts.any { it.id != base.id && sameProfileUrl(it.url, base.url) }) {
+            error = "This link is already added"
+            return false
+        }
         val mail = linkedEmail?.trim()?.lowercase()?.takeIf { it.contains("@") }
         val named = if (makeAsApp) {
             val label = appName.trim().ifBlank { nameFromLink(base.url).ifBlank { base.name } }.take(32)
@@ -1065,6 +1074,31 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         accounts = accounts.map {
             if (it.id == id) it.copy(count = value, history = it.history + (today to value)) else it
         }
+        persist()
+    }
+
+    /** Swaps one saved profile with its neighbour on the same site. The whole profile moves. */
+    fun moveAccount(id: String, forward: Boolean) {
+        val platformAccounts = accounts.filter { !it.asApp }
+        val groups = LinkedHashMap<String, MutableList<TrackedAccount>>()
+        for (acc in platformAccounts) groups.getOrPut(acc.siteKey()) { mutableListOf() }.add(acc)
+        val site = groups.entries.firstOrNull { entry -> entry.value.any { it.id == id } } ?: return
+        val members = site.value
+        val index = members.indexOfFirst { it.id == id }
+        val swapWith = if (forward) index - 1 else index + 1
+        if (index < 0 || swapWith !in members.indices) return
+        val swapped = members.toMutableList()
+        val moved = swapped.removeAt(index)
+        swapped.add(swapWith, moved)
+        groups[site.key] = swapped
+        val reordered = groups.values.flatten()
+        if (reordered.size != platformAccounts.size) return
+        val next = ArrayList<TrackedAccount>(accounts.size)
+        var cursor = 0
+        for (acc in accounts) {
+            if (acc.asApp) next.add(acc) else next.add(reordered[cursor++])
+        }
+        accounts = next
         persist()
     }
 

@@ -68,7 +68,6 @@ import androidx.compose.ui.unit.sp
 import com.trackme.app.Screen
 import com.trackme.app.data.Platform
 import com.trackme.app.data.TrackedAccount
-import com.trackme.app.data.siteKey
 
 // ---------- Palette (taken from the reference designs) ----------
 
@@ -98,27 +97,52 @@ val Platform.cardColor: Color
         Platform.PORTFOLIO -> Color(0xFF6EE7B7)
     }
 
-private val otherSiteColors = listOf(
-    Color(0xFF6EE7B7),
-    Color(0xFFFFC1A6),
-    Color(0xFFE6E6EA),
-    Color(0xFFD7C4F5),
-    Color(0xFFB7E4C7),
-    Color(0xFFFFE08A),
-    Color(0xFFA8D8FF),
-    Color(0xFFFFB4C8),
+private val blockColors = listOf(
+    Color(0xFFFFD0DC),
+    Color(0xFFC9F4D4),
+    Color(0xFFFFE3A3),
+    Color(0xFFD5E4FF),
+    Color(0xFFF6D0FF),
+    Color(0xFFC8F6F2),
+    Color(0xFFFFD7BE),
+    Color(0xFFE4F3B8),
+    Color(0xFFFFD6D6),
+    Color(0xFFDDD4FF),
+    Color(0xFFBDECD8),
+    Color(0xFFFFF0B8),
+    Color(0xFFC9DCFF),
+    Color(0xFFFFD0EA),
+    Color(0xFFB7F0E4),
+    Color(0xFFFFE0C2),
+    Color(0xFFE8D4FF),
+    Color(0xFFD4F5A6),
+    Color(0xFFFFC9C0),
+    Color(0xFFC5E8FF),
+    Color(0xFFF9D2B4),
+    Color(0xFFD8F3DC),
+    Color(0xFFE7D5FF),
+    Color(0xFFFFE8A0),
 )
 
-/** Same site keeps one colour. Other websites each keep their own. */
-fun TrackedAccount.siteColor(): Color {
-    if (platform != Platform.PORTFOLIO) return platform.cardColor
-    val host = siteKey().removePrefix("web:")
-    return when {
-        "reddit" in host -> Color(0xFFFFC1A6)
-        "threads" in host -> Color(0xFFE6E6EA)
-        else -> otherSiteColors[Math.floorMod(host.hashCode(), otherSiteColors.size)]
+/** One stable colour per saved profile. Two Instagram accounts do not share a colour. */
+fun uniqueBlockColors(accounts: List<TrackedAccount>): Map<String, Color> {
+    val used = HashSet<Int>()
+    val out = HashMap<String, Color>()
+    for (acc in accounts.sortedBy { it.id }) {
+        var index = Math.floorMod(acc.id.hashCode(), blockColors.size)
+        var step = 0
+        while (index in used && step < blockColors.size) {
+            index = (index + 1) % blockColors.size
+            step++
+        }
+        used.add(index)
+        out[acc.id] = blockColors[index]
     }
+    return out
 }
+
+fun TrackedAccount.siteColor(): Color =
+    blockColors[Math.floorMod(id.hashCode(), blockColors.size)]
 
 /** Two-letter mark shown in the round badge (no trademarked logos are bundled). */
 val Platform.badge: String
@@ -308,15 +332,17 @@ fun CountChart(
     color: Color,
     kind: GraphKind = GraphKind.CURVE,
     salt: Int = 0,
+    honest: Boolean = false,
 ) {
     Canvas(modifier) {
-        val series = graphSeries(values, kind, salt)
+        val series = if (honest) values else graphSeries(values, kind, salt)
         if (series.size < 2) return@Canvas
         val min = series.min()
         val max = series.max()
+        val flat = if (max <= 0f) 0.12f else 0.5f
         val points = series.mapIndexed { i, v ->
             val x = i * size.width / series.lastIndex
-            val t = if (max == min) 0.72f else ((v - min) / (max - min)).coerceIn(0f, 1f)
+            val t = if (max == min) flat else ((v - min) / (max - min)).coerceIn(0f, 1f)
             Offset(x, size.height * (1f - (0.08f + 0.84f * t)))
         }
         val stroke = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)

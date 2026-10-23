@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -207,6 +208,7 @@ fun HomeScreen(vm: TrackViewModel) {
     val totalGrowth = yearContributions.toLong() + totalSubscribers
 
     val siteGroups = platformAccounts.distinctBy { it.id }.siteGroups()
+    val blockColors = uniqueBlockColors(platformAccounts)
 
     Box(modifier = Modifier.fillMaxSize()) {
         if (isRaining) {
@@ -252,7 +254,7 @@ fun HomeScreen(vm: TrackViewModel) {
                 HeroTile(
                     totalGrowth = totalGrowth,
                     tags = platformAccounts.size,
-                    combined = combined,
+                    accounts = accounts.filter { !it.isHidden },
                     filesSize = com.trackme.app.data.formatBytes(vm.totalUploadedBytes),
                     badgeCount = vm.earnedBadges.size,
                     onBadges = { showBadges = true },
@@ -393,9 +395,14 @@ fun HomeScreen(vm: TrackViewModel) {
                                     onBack = { vm.moveSite(key, forward = false) },
                                 )
                                 if (group.size == 1) {
-                                    GridAccountCard(group.first(), onToggleVisibility = { vm.toggleAccountVisibility(group.first().id) }) { vm.openAccount(group.first().id) }
+                                    val acc = group.first()
+                                    GridAccountCard(
+                                        acc,
+                                        color = blockColors[acc.id] ?: acc.siteColor(),
+                                        onToggleVisibility = { vm.toggleAccountVisibility(acc.id) },
+                                    ) { vm.openAccount(acc.id) }
                                 } else {
-                                    StackedGridAccountCard(group) { selectedGroupForPopup = group }
+                                    StackedGridAccountCard(group, blockColors) { selectedGroupForPopup = group }
                                 }
                             }
                         }
@@ -416,9 +423,15 @@ fun HomeScreen(vm: TrackViewModel) {
                         )
                     }
                     items(group, key = { it.id }) { acc ->
+                        val pos = group.indexOfFirst { it.id == acc.id }
                         AccountCard(
                             acc,
-                            graphIndex = group.indexOfFirst { it.id == acc.id },
+                            color = blockColors[acc.id] ?: acc.siteColor(),
+                            graphIndex = group.map { it.id }.sorted().indexOf(acc.id).coerceAtLeast(0),
+                            canMoveForward = pos > 0,
+                            canMoveBack = pos < group.lastIndex,
+                            onMoveForward = { vm.moveAccount(acc.id, forward = true) },
+                            onMoveBack = { vm.moveAccount(acc.id, forward = false) },
                             onToggleVisibility = { vm.toggleAccountVisibility(acc.id) },
                         ) { vm.openAccount(acc.id) }
                     }
@@ -607,8 +620,19 @@ private fun GroupOrderDialog(
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
+                                val info = buildString {
+                                    append(acc.tagLine(withPlatform = false))
+                                    acc.count?.takeIf { it > 0L }?.let {
+                                        append(" · ")
+                                        append(compactCount(it))
+                                        if (acc.countLabel.isNotBlank()) {
+                                            append(" ")
+                                            append(acc.countLabel)
+                                        }
+                                    }
+                                }
                                 Text(
-                                    acc.tagLine(withPlatform = false),
+                                    info,
                                     color = Color.White.copy(alpha = 0.6f),
                                     fontSize = 12.sp,
                                     maxLines = 1,
@@ -669,7 +693,7 @@ private fun Header(
 private fun HeroTile(
     totalGrowth: Long,
     tags: Int,
-    combined: Map<String, Int>,
+    accounts: List<TrackedAccount>,
     filesSize: String = "0 B",
     badgeCount: Int = 0,
     onBadges: () -> Unit = {},
@@ -697,10 +721,10 @@ private fun HeroTile(
     }
     val currentBg = bgColors[bgIndex % bgColors.size]
     val ink = Brand.Ink
-    val bars = remember(combined) {
-        val raw = (35 downTo 0).map { (combined[Days.key(-it)] ?: 0).toFloat() }
-        val max = raw.maxOrNull() ?: 0f
-        if (max <= 0f) raw.map { 0f } else raw.map { it / max }
+    val series = remember(accounts) { activityCountSeries(accounts) }
+    val bars = remember(series) {
+        val max = series.maxOrNull() ?: 0f
+        if (max <= 0f) series.map { 0f } else series.map { it / max }
     }
     Column(
         Modifier
@@ -708,9 +732,7 @@ private fun HeroTile(
             .clip(RoundedCornerShape(28.dp))
             .background(currentBg)
             .markTour("activity")
-            .clickable {
-                if (monkeyOn) jumpToken++ else bgIndex = (bgIndex + 1) % bgColors.size
-            }
+            .clickable(enabled = monkeyOn) { jumpToken++ }
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -737,15 +759,24 @@ private fun HeroTile(
             }
         }
         Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth().height(44.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            WaveformBars(bars, Modifier.weight(1f).fillMaxHeight(), ink, ink.copy(alpha = 0.16f))
+            CountChart(
+                series,
+                Modifier.weight(1f).fillMaxHeight(),
+                ink,
+                GraphKind.CURVE,
+                honest = true,
+            )
+        }
         if (monkeyOn) {
+            Spacer(Modifier.height(6.dp))
             MonkeyRun(
                 jumpToken = jumpToken,
                 ink = ink,
                 onOut = { monkeyOn = false },
                 modifier = Modifier.fillMaxWidth().height(72.dp),
             )
-        } else {
-            WaveformBars(bars, Modifier.fillMaxWidth().height(40.dp), ink, ink.copy(alpha = 0.16f))
         }
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Bottom) {
@@ -753,7 +784,16 @@ private fun HeroTile(
                 Modifier
                     .weight(1.35f)
                     .markTour("contributions")
-                    .then(if (!monkeyOn) Modifier.clickable { monkeyOn = true } else Modifier),
+                    .then(
+                        if (!monkeyOn) {
+                            Modifier.clickable {
+                                bgIndex = (bgIndex + 1) % bgColors.size
+                                monkeyOn = true
+                            }
+                        } else {
+                            Modifier
+                        },
+                    ),
             ) {
                 val countText = compactCount(totalGrowth)
                 Text(
@@ -782,6 +822,28 @@ private fun HeroTile(
                 modifier = Modifier.weight(0.85f),
             )
         }
+    }
+}
+
+/** Daily total of saved counts. A day stays at the last count until a new one is saved. */
+private fun activityCountSeries(accounts: List<TrackedAccount>, days: Int = 18): List<Float> {
+    val keys = (days - 1 downTo 0).map { Days.key(-it) }
+    val carried = HashMap<String, Long>()
+    val started = HashSet<String>()
+    return keys.map { key ->
+        var total = 0.0
+        for (acc in accounts) {
+            if (acc.platform.fullScan) {
+                total += (acc.activity[key] ?: 0).toDouble()
+            } else {
+                acc.history[key]?.let {
+                    carried[acc.id] = it
+                    started.add(acc.id)
+                }
+                if (acc.id in started) total += (carried[acc.id] ?: 0L).toDouble()
+            }
+        }
+        total.toFloat()
     }
 }
 
@@ -1095,19 +1157,29 @@ private fun SiteGroupBar(
 }
 
 @Composable
-private fun AccountCard(acc: TrackedAccount, graphIndex: Int = 0, onToggleVisibility: () -> Unit, onClick: () -> Unit) {
-    val m = remember(acc) { cardModel(acc) }
+private fun AccountCard(
+    acc: TrackedAccount,
+    color: Color,
+    graphIndex: Int = 0,
+    canMoveForward: Boolean = false,
+    canMoveBack: Boolean = false,
+    onMoveForward: () -> Unit = {},
+    onMoveBack: () -> Unit = {},
+    onToggleVisibility: () -> Unit,
+    onClick: () -> Unit,
+) {
+    val m = cardModel(acc)
     val ink = Brand.Ink
     val notchW = 188.dp
     val notchH = 70.dp
-    val shape = remember { NotchShape(28.dp, notchW, notchH) }
+    val shape = remember(acc.id) { NotchShape(28.dp, notchW, notchH) }
 
     Box(Modifier.fillMaxWidth().height(232.dp)) {
         Box(
             Modifier
                 .fillMaxSize()
                 .clip(shape)
-                .background(acc.siteColor())
+                .background(color)
                 .clickable(onClick = onClick),
         ) {
             Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 16.dp)) {
@@ -1125,6 +1197,24 @@ private fun AccountCard(acc: TrackedAccount, graphIndex: Int = 0, onToggleVisibi
                             color = ink.copy(alpha = 0.6f), fontSize = 12.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
+                    }
+                    if (canMoveForward || canMoveBack) {
+                        Column {
+                            IconButton(
+                                onClick = onMoveForward,
+                                enabled = canMoveForward,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move profile up", tint = ink, modifier = Modifier.size(18.dp))
+                            }
+                            IconButton(
+                                onClick = onMoveBack,
+                                enabled = canMoveBack,
+                                modifier = Modifier.size(28.dp),
+                            ) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move profile down", tint = ink, modifier = Modifier.size(18.dp))
+                            }
+                        }
                     }
                     IconButton(onClick = onToggleVisibility, modifier = Modifier.size(36.dp)) {
                         Icon(
@@ -1198,8 +1288,8 @@ private fun AccountCard(acc: TrackedAccount, graphIndex: Int = 0, onToggleVisibi
 }
 
 @Composable
-private fun GridAccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onClick: () -> Unit) {
-    val m = remember(acc) { cardModel(acc) }
+private fun GridAccountCard(acc: TrackedAccount, color: Color, onToggleVisibility: () -> Unit, onClick: () -> Unit) {
+    val m = cardModel(acc)
 
     val ink = Brand.Ink
     Column(
@@ -1207,7 +1297,7 @@ private fun GridAccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit,
             .fillMaxWidth()
             .height(170.dp)
             .clip(RoundedCornerShape(28.dp))
-            .background(acc.siteColor())
+            .background(color)
             .clickable(onClick = onClick)
             .padding(14.dp),
         verticalArrangement = Arrangement.SpaceBetween,
@@ -1254,10 +1344,14 @@ private fun GridAccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit,
 }
 
 @Composable
-private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> Unit) {
+private fun StackedGridAccountCard(
+    group: List<TrackedAccount>,
+    colors: Map<String, Color>,
+    onClick: () -> Unit,
+) {
     val acc = group.first()
-    val totalCount = group.filter { !it.isHidden }.mapNotNull { it.count }.sum()
-    val label = if (group.any { it.platform.fullScan }) "Contributions" else acc.countLabel
+    val color = colors[acc.id] ?: acc.siteColor()
+    val front = cardModel(acc)
 
     val ink = Brand.Ink
     Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) {
@@ -1268,7 +1362,7 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
                 .offset(x = (-8).dp, y = 8.dp)
                 .rotate(-6f)
                 .clip(RoundedCornerShape(28.dp))
-                .background(acc.siteColor().copy(alpha = 0.45f))
+                .background(color.copy(alpha = 0.45f))
         )
         Box(
             Modifier
@@ -1277,25 +1371,20 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
                 .offset(x = 6.dp, y = 2.dp)
                 .rotate(4f)
                 .clip(RoundedCornerShape(28.dp))
-                .background(acc.siteColor().copy(alpha = 0.7f))
+                .background(color.copy(alpha = 0.7f))
         )
         Column(
             Modifier
                 .fillMaxWidth()
                 .height(170.dp)
                 .clip(RoundedCornerShape(28.dp))
-                .background(acc.siteColor())
+                .background(color)
                 .clickable(onClick = onClick)
                 .padding(14.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.size(36.dp).clip(CircleShape).background(ink),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("+${group.size}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    }
+                    AccountAvatar(acc, 36.dp)
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -1304,16 +1393,23 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            "Shows first · ${group.size}",
+                            acc.tagLine(withPlatform = false),
                             color = ink.copy(alpha = 0.6f), fontSize = 11.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    Text("+${group.size - 1}", color = ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                 }
                 Column {
-                    val big = if (totalCount > 0) compactCount(totalCount) else "Multiple"
+                    val big = front.big.ifBlank { "Open" }
                     Text(big, color = ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
-                    Text("Total $label", color = ink.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(
+                        front.bigLabel.ifBlank { "Profile" },
+                        color = ink.copy(alpha = 0.7f),
+                        fontSize = 11.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
                 Row(
                     Modifier.fillMaxWidth(),

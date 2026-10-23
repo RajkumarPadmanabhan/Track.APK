@@ -62,8 +62,8 @@ private data class TourStep(
 private val tourSteps = listOf(
     TourStep("avatar", "Profile picture", "Opens your profile. Backup, restore, and sign out are there.", 0.86f, 0.08f),
     TourStep("refresh", "Refresh", "Reads the latest counts from the pages you saved.", 0.9f, 0.2f),
-    TourStep("activity", "Activity", "One tap changes this card's color. The color stays while the monkey is running.", 0.5f, 0.34f),
-    TourStep("contributions", "Contributions this year", "Tap the number to start the monkey. Tap the card to make it jump.", 0.28f, 0.46f),
+    TourStep("activity", "Activity", "The bars and the graph follow your saved counts. They stay flat until a count changes.", 0.5f, 0.34f),
+    TourStep("contributions", "Contributions this year", "Tap the number to start the monkey. The card color changes only then. Tap the card to jump.", 0.28f, 0.46f),
     TourStep("layout", "Your platforms", "Each card is a page you scanned. This button switches list and grid.", 0.86f, 0.62f),
     TourStep("scan", "Scan", "Tap to add a link or upload a file. Swipe left for news, then files. Swipe right to go back.", 0.5f, 0.9f),
     TourStep("home", "Home", "Brings you back to this page.", 0.18f, 0.9f),

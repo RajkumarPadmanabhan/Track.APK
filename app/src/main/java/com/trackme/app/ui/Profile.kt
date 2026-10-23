@@ -695,7 +695,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                     AboutBullet("Download or restore a backup of your tags and files")
                     AboutBullet("Turn a link into an app shortcut on the home screen")
                     AboutBullet("Badges for scans, uploads, activity, file size, and days in the app")
-                    AboutBullet("Activity color and the jumping monkey follow your counts")
+                    AboutBullet("Activity bars and the graph follow your counts. The color changes when the monkey starts")
                     AboutBullet("Theme colors, and a blue tick after the promo code")
                 }
             },

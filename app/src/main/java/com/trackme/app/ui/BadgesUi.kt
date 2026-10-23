@@ -1,5 +1,6 @@
 package com.trackme.app.ui
 
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -20,7 +21,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.LocalFireDepartment
@@ -37,7 +37,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -83,21 +85,28 @@ fun BadgeMark(id: String, size: Dp, modifier: Modifier = Modifier) {
 
 @Composable
 fun VerifyTick(verified: Boolean, onClick: (() -> Unit)?) {
-    val bg = if (verified) Color(0xFF3897F0) else Color(0xFF8E8E8E)
+    val bg = if (verified) Color(0xFF0095F6) else Color(0xFF8E8E8E)
     Box(
         Modifier
-            .size(16.dp)
+            .size(18.dp)
             .clip(CircleShape)
             .background(bg)
             .then(if (!verified && onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        androidx.compose.material3.Icon(
-            Icons.Default.Check,
-            contentDescription = if (verified) "Verified" else "Enter a promo code",
-            tint = Color.White,
-            modifier = Modifier.size(11.dp),
-        )
+        Canvas(Modifier.size(18.dp).padding(3.dp)) {
+            val s = size.minDimension
+            val stroke = s * 0.16f
+            val start = Offset(s * 0.16f, s * 0.52f)
+            val corner = Offset(s * 0.40f, s * 0.76f)
+            val tip = Offset(s * 0.78f, s * 0.30f)
+            drawLine(Color.White, start, corner, strokeWidth = stroke, cap = StrokeCap.Round)
+            drawLine(Color.White, corner, tip, strokeWidth = stroke, cap = StrokeCap.Round)
+            if (verified) {
+                drawLine(Color.White, Offset(tip.x - s * 0.24f, tip.y), tip, strokeWidth = stroke, cap = StrokeCap.Round)
+                drawLine(Color.White, tip, Offset(tip.x, tip.y + s * 0.24f), strokeWidth = stroke, cap = StrokeCap.Round)
+            }
+        }
     }
 }
 
