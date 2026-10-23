@@ -949,7 +949,7 @@ private fun CollaboratorsDialog(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                RemoteAvatar(collab.avatarUrl, size = 42)
+                                RemoteAvatar(collab.avatarUrl.orEmpty(), size = 42)
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         "@" + collab.login,

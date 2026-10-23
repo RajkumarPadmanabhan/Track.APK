@@ -255,7 +255,9 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         val e = user.email.trim().lowercase()
         val name = user.displayName?.ifBlank { null } ?: nameFromEmail(e)
         val avatar = user.profilePictureUri?.ifBlank { null }
-        val s = UserSession(e, name, avatar)
+        val savedName = prefs.getString("name_$e", null)?.takeIf { it.isNotBlank() } ?: name
+        val savedAvatar = prefs.getString("avatar_$e", null)?.takeIf { it.isNotBlank() } ?: avatar
+        val s = UserSession(e, savedName, savedAvatar)
         Store.saveUser(prefs, s)
         session = s
         accounts = Store.loadAccounts(prefs, e)
@@ -326,7 +328,18 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
     fun isTracked(draft: TrackedAccount) = accounts.any { it.id == draft.id }
 
+    fun checkCrossAccountDuplicate(): Boolean {
+        val draft = currentDraft() ?: return false
+        val email = session?.email ?: ""
+        if (Store.isTrackedByAnotherAccount(prefs, email, draft)) {
+            error = "added to another account remove from there to add here"
+            return true
+        }
+        return false
+    }
+
     fun addDraft(): Boolean {
+        if (checkCrossAccountDuplicate()) return false
         val draft = currentDraft() ?: return false
         val existing = accounts.firstOrNull { it.id == draft.id }
         accounts = if (existing != null) {
@@ -430,6 +443,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             repos = emptyList()
             activity = emptyMap()
             linkProfile = parsed
+            if (checkCrossAccountDuplicate()) return
             if (p.hasPreview) loadPreview(p, parsed)
             return
         }
@@ -486,6 +500,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 }
             } finally {
                 loading = false
+                checkCrossAccountDuplicate()
             }
         }
     }
@@ -499,6 +514,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         prefs.edit().putString("git_skip", "").apply()
         language = null
         query = ""
+        checkCrossAccountDuplicate()
     }
 
     /** Repos after filtering and auto-arranging. */

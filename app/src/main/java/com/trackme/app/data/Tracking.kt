@@ -347,6 +347,34 @@ object Store {
         p.edit().putString("accounts_$email", arr.toString()).apply()
     }
 
+    /** Returns true if this account (by ID, URL, or platform+handle) is already saved under a different email. */
+    fun isTrackedByAnotherAccount(p: SharedPreferences, currentEmail: String, acc: TrackedAccount): Boolean {
+        val allKeys = p.all.keys.filter { it.startsWith("accounts_") }
+        val targetEmailKey = "accounts_${currentEmail.trim().lowercase()}"
+        val normUrl = acc.url.trim().lowercase().trimEnd('/')
+        val normHandle = acc.handle.trim().lowercase().trimStart('@')
+
+        for (key in allKeys) {
+            if (key == targetEmailKey) continue
+            val raw = p.getString(key, null) ?: continue
+            try {
+                val arr = JSONArray(raw)
+                for (i in 0 until arr.length()) {
+                    val other = fromJson(arr.getJSONObject(i)) ?: continue
+                    val otherNormUrl = other.url.trim().lowercase().trimEnd('/')
+                    val otherNormHandle = other.handle.trim().lowercase().trimStart('@')
+                    if (other.id == acc.id ||
+                        (other.platform == acc.platform && otherNormHandle == normHandle) ||
+                        (normUrl.isNotBlank() && otherNormUrl == normUrl)
+                    ) {
+                        return true
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        return false
+    }
+
     private fun toJson(a: TrackedAccount) = JSONObject().apply {
         put("id", a.id)
         put("platform", a.platform.name)
