@@ -32,7 +32,13 @@ object SocialCountScraper {
                         followers = best.followers ?: found.followers,
                         following = best.following ?: found.following,
                     )
-                    if (best.followers != null) return@withContext best
+                    if (best.followers != null && best.following != null) return@withContext best
+                }
+            }
+            if (best.followers == null) {
+                fromPublicSnippet(rawUrl)?.let { found ->
+                    loaded = true
+                    best = SocialCounts(found.followers ?: best.followers, found.following ?: best.following)
                 }
             }
             if (!loaded) null else best
@@ -43,7 +49,7 @@ object SocialCountScraper {
 
     private fun agentsFor(url: String): List<String> {
         return if ("facebook.com" in url || "fb.com" in url) {
-            listOf(GOOGLEBOT, FACEBOOK_HIT, MOBILE)
+            listOf(FACEBOOK_HIT, GOOGLEBOT, MOBILE)
         } else {
             listOf(GOOGLEBOT, MOBILE)
         }
@@ -54,8 +60,17 @@ object SocialCountScraper {
         var followers: String? = null
         var following: String? = null
         for (desc in metaValues(html)) {
-            if (followers == null) followers = firstCount(desc, "followers?")
-            if (following == null) following = firstCount(desc, "following")
+            val plain = strip(decode(desc))
+            if (followers == null) followers = firstCount(plain, "followers?")
+            if (following == null) following = firstCount(plain, "following")
+        }
+        if (followers == null) {
+            followers = jsonNumber(html, "followerCount")
+                ?: jsonNumber(html, "followersCount")
+                ?: jsonNumber(html, "followers_count")
+        }
+        if (following == null) {
+            following = jsonNumber(html, "followingCount") ?: jsonNumber(html, "following_count")
         }
         if (followers == null) {
             followers = nearby(html, "followers") ?: nearby(html, "follower")
@@ -64,6 +79,65 @@ object SocialCountScraper {
         if (following == null) following = nearby(html, "following")
         return SocialCounts(followers, following)
     }
+
+    /** Public search snippet, used when the page itself is a sign-in wall. */
+    private fun fromPublicSnippet(pageUrl: String): SocialCounts? {
+        val host = try {
+            URI(pageUrl).host?.lowercase().orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+        if ("linkedin.com" !in host && "facebook.com" !in host && "fb.com" !in host) return null
+        val slug = pageSlug(pageUrl) ?: return null
+        val query = URLEncoder.encode("\"$slug\" followers", "UTF-8")
+        val pages = listOf(
+            "https://html.duckduckgo.com/html/?q=$query",
+            "https://www.bing.com/search?q=$query",
+        )
+        for (page in pages) {
+            val html = load(page, MOBILE) ?: continue
+            val plain = strip(decode(html))
+            val at = plain.indexOf(slug, ignoreCase = true)
+            if (at < 0) continue
+            val window = plain.substring((at - 40).coerceAtLeast(0), (at + 240).coerceAtMost(plain.length))
+            val followers = firstCount(window, "followers?") ?: continue
+            return SocialCounts(followers, firstCount(window, "following"))
+        }
+        return null
+    }
+
+    private fun pageSlug(pageUrl: String): String? {
+        val withScheme = if (pageUrl.startsWith("http://") || pageUrl.startsWith("https://")) pageUrl else "https://$pageUrl"
+        val uri = try {
+            URI(withScheme)
+        } catch (_: Exception) {
+            return null
+        }
+        val skip = setOf("in", "company", "school", "pages", "people", "profile.php")
+        val slug = uri.path.orEmpty().trim('/').split('/').lastOrNull { it.isNotBlank() && it.lowercase() !in skip }
+            ?.substringBefore('?')
+            ?: return null
+        if (slug.length < 3) return null
+        return slug
+    }
+
+    private fun jsonNumber(html: String, key: String): String? {
+        var from = 0
+        var seen = 0
+        while (seen < 6) {
+            val idx = html.indexOf(key, from, ignoreCase = true)
+            if (idx < 0) return null
+            val slice = html.substring(idx, (idx + key.length + 48).coerceAtMost(html.length))
+            val match = Regex("""[:=]\s*"?(\d{1,12})""").find(slice)
+            val value = match?.groupValues?.get(1)?.toLongOrNull()
+            if (value != null && value > 0L) return value.toString()
+            from = idx + key.length
+            seen++
+        }
+        return null
+    }
+
+    private fun strip(text: String): String = text.replace(Regex("<[^>]{0,300}>"), " ")
 
     private fun metaValues(html: String): List<String> {
         val headEnd = html.indexOf("</head>", ignoreCase = true).let { end ->
@@ -105,8 +179,8 @@ object SocialCountScraper {
         while (seen < 30) {
             val idx = html.indexOf(word, from, ignoreCase = true)
             if (idx < 0) return null
-            val start = (idx - 48).coerceAtLeast(0)
-            val window = decode(html.substring(start, idx + word.length))
+            val start = (idx - 120).coerceAtLeast(0)
+            val window = strip(decode(html.substring(start, idx + word.length)))
             val hit = firstCount(window, pattern)
             if (hit != null) return hit
             from = idx + word.length
@@ -118,8 +192,8 @@ object SocialCountScraper {
     private fun nearbyPhrase(html: String, phrase: String): String? {
         val idx = html.indexOf(phrase, ignoreCase = true)
         if (idx < 0) return null
-        val start = (idx - 48).coerceAtLeast(0)
-        return firstCount(decode(html.substring(start, idx + phrase.length)), "people follow this")
+        val start = (idx - 120).coerceAtLeast(0)
+        return firstCount(strip(decode(html.substring(start, idx + phrase.length))), "people follow this")
     }
 
     private val amount = """(\d{1,3}(?:[, ]\d{2,3})+|\d+(?:\.\d+)?)([KMBkmb])?"""
@@ -138,6 +212,8 @@ object SocialCountScraper {
             .replace("&amp;", "&", ignoreCase = true)
             .replace("&#039;", "'", ignoreCase = true)
             .replace("&quot;", "\"", ignoreCase = true)
+            .replace("&lt;", "<", ignoreCase = true)
+            .replace("&gt;", ">", ignoreCase = true)
         val out = StringBuilder()
         var i = 0
         while (i < named.length) {
@@ -222,6 +298,7 @@ object SocialCountScraper {
             setRequestProperty("User-Agent", agent)
             setRequestProperty("Accept", "text/html,application/xhtml+xml")
             setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+            setRequestProperty("Accept-Encoding", "identity")
             setRequestProperty("Cookie", "locale=en_US")
         }
         return try {

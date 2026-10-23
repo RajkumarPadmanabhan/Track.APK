@@ -98,7 +98,15 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     fun loadLiveNews() {
         viewModelScope.launch {
             _isNewsLoading.value = true
-            _newsFeed.value = NewsDataRepository.fetchLiveNews()
+            val seen = LinkedHashMap<String, UserNewsPost>()
+            for (batch in NewsDataRepository.liveBatches()) {
+                for (post in batch) {
+                    val key = post.sourceUrl.ifBlank { post.id }.lowercase()
+                    if (key.isNotBlank()) seen.putIfAbsent(key, post)
+                }
+                if (seen.isNotEmpty()) _newsFeed.value = seen.values.toList()
+            }
+            _newsFeed.value = seen.values.toList()
             _isNewsLoading.value = false
         }
     }
@@ -449,7 +457,12 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         val list = accounts
         if (refreshing || list.isEmpty()) return
         val now = System.currentTimeMillis()
-        val stale = list.any { it.platform != Platform.X && now - it.syncedAt > 10 * 60_000L }
+        val stale = list.any {
+            val missingSocialCount = it.count == null && (
+                it.platform == Platform.LINKEDIN || it.platform == Platform.FACEBOOK || it.platform == Platform.INSTAGRAM
+                )
+            missingSocialCount || (it.platform != Platform.X && now - it.syncedAt > 10 * 60_000L)
+        }
         if (!force && !stale) return
 
         refreshing = true

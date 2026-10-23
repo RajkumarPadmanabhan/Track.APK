@@ -106,6 +106,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import com.trackme.app.data.ShopEntry
+import com.trackme.app.data.compactCount
 import com.trackme.app.data.formatRupees
 import com.trackme.app.data.parseCount
 import com.trackme.app.data.parseMoney
@@ -406,6 +407,11 @@ private fun LinkProfileCard(
                 kept && (value.equals("Hidden", true) || (parseCount(value) ?: 0L) > 0L)
             }
             if (stats.isNotEmpty()) PreviewCard(preview.copy(stats = stats))
+        }
+        val savedCount = account?.count?.takeIf { it > 0L && (preview?.stats?.isEmpty() != false) }
+        if (savedCount != null && (platform == Platform.LINKEDIN || platform == Platform.FACEBOOK || platform == Platform.INSTAGRAM || platform == Platform.X)) {
+            Text(compactCount(savedCount), fontSize = 36.sp, fontWeight = FontWeight.Bold)
+            Text(account?.countLabel?.ifBlank { "Followers" } ?: "Followers", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         val shop = preview?.shop?.takeIf { it.isNotEmpty() } ?: shopEntries(account)
         val shopEmail = account?.linkedEmail?.trim()?.takeIf {
