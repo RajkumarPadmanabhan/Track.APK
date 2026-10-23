@@ -10,6 +10,35 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
+data class NewsTopic(val id: String, val label: String, val feeds: List<String>)
+
+object NewsTopics {
+    const val MAX = 5
+    private fun google(query: String): String {
+        val q = URLEncoder.encode(query, "UTF-8")
+        return "https://news.google.com/rss/search?q=$q&hl=en-IN&gl=IN&ceid=IN:en"
+    }
+    val all = listOf(
+        NewsTopic("sports", "Sports", listOf(google("sports"), "https://feeds.bbci.co.uk/sport/rss.xml")),
+        NewsTopic("finance", "Finance", listOf(google("finance markets"), "https://feeds.bbci.co.uk/news/business/rss.xml")),
+        NewsTopic("cyber", "Cyber security", listOf(google("cybersecurity"), "https://feeds.feedburner.com/TheHackersNews")),
+        NewsTopic("art", "Art", listOf(google("art exhibition painting"))),
+        NewsTopic("racing", "Racing", listOf(google("Formula 1 motorsport racing"))),
+        NewsTopic("science", "Science", listOf(google("science"), "https://feeds.bbci.co.uk/news/science_and_environment/rss.xml")),
+        NewsTopic("technology", "Technology", listOf(google("technology"), "https://www.theverge.com/rss/index.xml")),
+        NewsTopic("health", "Health", listOf(google("health"), "https://feeds.bbci.co.uk/news/health/rss.xml")),
+        NewsTopic("world", "World", listOf(google("world news"), "https://feeds.bbci.co.uk/news/world/rss.xml", "https://www.theguardian.com/world/rss")),
+        NewsTopic("business", "Business", listOf(google("business"))),
+        NewsTopic("entertainment", "Entertainment", listOf(google("entertainment movies music"))),
+        NewsTopic("climate", "Climate", listOf(google("climate change environment"))),
+        NewsTopic("food", "Food", listOf(google("food cooking"))),
+        NewsTopic("education", "Education", listOf(google("education schools"))),
+        NewsTopic("politics", "Politics", listOf(google("politics"))),
+        NewsTopic("travel", "Travel", listOf(google("travel"))),
+    )
+    fun selected(ids: List<String>): List<NewsTopic> = ids.mapNotNull { id -> all.firstOrNull { it.id == id } }.take(MAX)
+}
+
 object NewsDataRepository {
     // NewsData.io API Key
     private const val API_KEY = "pub_72931aef70e44b829ed6d3d3b764ef1a01784"
@@ -31,24 +60,21 @@ object NewsDataRepository {
         "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en",
     )
 
-    /** Each feed is sent as soon as it arrives, including its photos. */
-    fun liveFlow(): Flow<List<UserNewsPost>> = channelFlow {
-        for (feed in feeds) {
-            launch(Dispatchers.IO) {
-                val posts = readFeed(feed)
-                if (posts.isNotEmpty()) send(posts)
+    /** Headlines for the topics the user picked. Each feed is sent as it arrives. */
+    fun liveFlow(topics: List<NewsTopic>): Flow<List<UserNewsPost>> = channelFlow {
+        for (topic in topics) {
+            for (feed in topic.feeds) {
+                launch(Dispatchers.IO) {
+                    val posts = readFeed(feed, topic.label)
+                    if (posts.isNotEmpty()) send(posts)
+                }
             }
-        }
-        launch(Dispatchers.IO) {
-            val api = LinkedHashMap<String, UserNewsPost>()
-            addNewsData(api)
-            if (api.isNotEmpty()) send(api.values.toList())
         }
     }
 
-    suspend fun fetchLiveNews(): List<UserNewsPost> {
+    suspend fun fetchLiveNews(topics: List<NewsTopic>): List<UserNewsPost> {
         val news = LinkedHashMap<String, UserNewsPost>()
-        liveFlow().collect { batch ->
+        liveFlow(topics).collect { batch ->
             for (post in batch) {
                 val key = post.sourceUrl.ifBlank { post.id }.lowercase()
                 if (key.isNotBlank()) news.putIfAbsent(key, post)
@@ -98,7 +124,7 @@ object NewsDataRepository {
         }
     }
 
-    private fun readFeed(endpoint: String): List<UserNewsPost> {
+    private fun readFeed(endpoint: String, category: String): List<UserNewsPost> {
         val xml = getText(endpoint) ?: return emptyList()
         val chunks = Regex("(?is)<(?:item|entry)\\b[^>]*>(.*?)</(?:item|entry)>").findAll(xml)
         val posts = ArrayList<UserNewsPost>()
@@ -120,7 +146,7 @@ object NewsDataRepository {
                 sourceUrl = link,
                 publishedAt = (tagText(body, "pubDate") ?: tagText(body, "published") ?: tagText(body, "updated") ?: "Today").take(16),
                 imageUrl = image?.takeIf { it.startsWith("http") },
-                categoryTag = "Live",
+                categoryTag = category,
             )
         }
         return posts

@@ -1,9 +1,14 @@
 package com.trackme.app.ui
 
+import android.media.MediaPlayer
 import android.widget.Toast
+import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -25,11 +31,14 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -50,6 +59,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.TrackViewModel
+import com.trackme.app.data.FilePreviewer
 import com.trackme.app.data.UploadedFile
 import com.trackme.app.data.formatBytes
 import java.text.SimpleDateFormat
@@ -65,8 +75,12 @@ fun FilesScreen(vm: TrackViewModel) {
     var pendingDelete by remember { mutableStateOf<UploadedFile?>(null) }
     var pendingDownload by remember { mutableStateOf<UploadedFile?>(null) }
 
+    var preview by remember { mutableStateOf<FilePreviewer.Result?>(null) }
+    var previewName by remember { mutableStateOf("") }
+    var previewing by remember { mutableStateOf(false) }
+
     val downloadLauncher = rememberLauncherForActivityResult(
-        ActivityResultContracts.CreateDocument("application/pdf")
+        ActivityResultContracts.CreateDocument("*/*")
     ) { uri ->
         val file = pendingDownload
         pendingDownload = null
@@ -140,10 +154,10 @@ fun FilesScreen(vm: TrackViewModel) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Icon(Icons.Default.PictureAsPdf, null, tint = Color.Gray, modifier = Modifier.size(40.dp))
+                Icon(Icons.Default.InsertDriveFile, null, tint = Color.Gray, modifier = Modifier.size(40.dp))
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    if (vm.uploadedFiles.isEmpty()) "No files uploaded yet. Use Upload PDF in Scan."
+                    if (vm.uploadedFiles.isEmpty()) "No files uploaded yet. Use Upload a file in Scan."
                     else "No file matches that name.",
                     color = Color.Gray,
                 )
@@ -160,8 +174,11 @@ fun FilesScreen(vm: TrackViewModel) {
                         file = file,
                         compact = true,
                         onPreview = {
-                            vm.previewUploadedFile(ctx, file) { ok ->
-                                if (!ok) Toast.makeText(ctx, "No PDF viewer found, or the file could not be verified.", Toast.LENGTH_SHORT).show()
+                            previewName = file.displayName
+                            previewing = true
+                            vm.prepareFilePreview(ctx, file) { result ->
+                                previewing = false
+                                preview = result
                             }
                         },
                         onDownload = {
@@ -182,8 +199,11 @@ fun FilesScreen(vm: TrackViewModel) {
                         file = file,
                         compact = false,
                         onPreview = {
-                            vm.previewUploadedFile(ctx, file) { ok ->
-                                if (!ok) Toast.makeText(ctx, "No PDF viewer found, or the file could not be verified.", Toast.LENGTH_SHORT).show()
+                            previewName = file.displayName
+                            previewing = true
+                            vm.prepareFilePreview(ctx, file) { result ->
+                                previewing = false
+                                preview = result
                             }
                         },
                         onDownload = {
@@ -215,6 +235,73 @@ fun FilesScreen(vm: TrackViewModel) {
             },
         )
     }
+
+    if (previewing) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Preview") },
+            text = { Text("Checking the saved file…") },
+            confirmButton = {},
+        )
+    }
+
+    preview?.let { result ->
+        AlertDialog(
+            onDismissRequest = { preview = null },
+            title = { Text(previewName, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = { PreviewBody(result) },
+            confirmButton = {
+                TextButton(onClick = { preview = null }) { Text("Close") }
+            },
+        )
+    }
+}
+
+@Composable
+private fun PreviewBody(result: FilePreviewer.Result) {
+    Column(
+        Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        result.note?.let { Text(it, fontSize = 12.sp, color = Color.Gray) }
+        when (result.kind) {
+            FilePreviewer.Kind.IMAGE -> result.image?.let {
+                Image(it.asImageBitmap(), contentDescription = "Preview", modifier = Modifier.fillMaxWidth())
+            }
+            FilePreviewer.Kind.PDF -> result.pages.forEach { page ->
+                Image(page.asImageBitmap(), contentDescription = "Page", modifier = Modifier.fillMaxWidth())
+            }
+            FilePreviewer.Kind.TEXT -> Text(result.text.orEmpty(), color = Color.White, fontSize = 13.sp)
+            FilePreviewer.Kind.VIDEO -> result.media?.let { media ->
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth().height(220.dp),
+                    factory = { viewContext ->
+                        VideoView(viewContext).apply {
+                            setVideoPath(media.absolutePath)
+                            setOnPreparedListener { it.isLooping = false; start() }
+                        }
+                    },
+                )
+            }
+            FilePreviewer.Kind.AUDIO -> AudioPreview(result.media)
+            FilePreviewer.Kind.BLOCKED -> Unit
+        }
+    }
+}
+
+@Composable
+private fun AudioPreview(file: java.io.File?) {
+    if (file == null) return
+    DisposableEffect(file) {
+        val player = MediaPlayer()
+        runCatching {
+            player.setDataSource(file.absolutePath)
+            player.prepare()
+            player.start()
+        }
+        onDispose { runCatching { player.release() } }
+    }
+    Text("Playing the saved audio.", color = Color.White, fontSize = 13.sp)
 }
 
 @Composable
@@ -228,7 +315,7 @@ private fun FileCard(
     Tile(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.PictureAsPdf, null, tint = Brand.Coral, modifier = Modifier.size(26.dp))
+                Icon(Icons.Default.InsertDriveFile, null, tint = Brand.Coral, modifier = Modifier.size(26.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
                     file.displayName,
@@ -240,21 +327,18 @@ private fun FileCard(
                     modifier = Modifier.weight(1f),
                 )
             }
-            if (!compact) {
-                file.portfolioName?.takeIf { it.isNotBlank() }?.let {
-                    Text(it, color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-            }
             Text(
-                "${formatBytes(file.originalSize)} · ${file.pageCount} pages",
+                formatBytes(file.originalSize),
                 color = Color.White.copy(alpha = 0.65f),
                 fontSize = 12.sp,
             )
-            Text(
-                "Saved as ${formatBytes(file.storedSize)} · ${dateText(file.uploadedAt)}",
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 11.sp,
-            )
+            if (!compact) {
+                Text(
+                    "Saved as ${formatBytes(file.storedSize)} · ${dateText(file.uploadedAt)}",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 11.sp,
+                )
+            }
             Row {
                 IconButton(onClick = onPreview, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Visibility, contentDescription = "Preview", tint = Color.White)

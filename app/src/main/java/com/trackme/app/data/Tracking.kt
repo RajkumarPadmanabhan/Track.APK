@@ -42,6 +42,9 @@ data class TrackedAccount(
     val portfolioEmail: String? = null,
     val portfolioPhone: String? = null,
     val portfolioLinks: List<String> = emptyList(),
+    /** Shown as a home-screen icon instead of a count card. */
+    val asApp: Boolean = false,
+    val appName: String? = null,
 )
 
 /** Fresh data read from a platform, before it is merged into a [TrackedAccount]. */
@@ -209,7 +212,24 @@ fun TrackedAccount.mergeWith(f: TrackedAccount): TrackedAccount {
         portfolioEmail = f.portfolioEmail ?: portfolioEmail,
         portfolioPhone = f.portfolioPhone ?: portfolioPhone,
         portfolioLinks = f.portfolioLinks.ifEmpty { portfolioLinks },
+        asApp = f.asApp,
+        appName = if (f.asApp) f.appName ?: appName else null,
     )
+}
+
+/** A short name taken from the link, used as the default app name. */
+fun nameFromLink(raw: String): String {
+    val text = raw.trim()
+    if (text.isBlank()) return ""
+    val path = text.removePrefix("https://").removePrefix("http://").substringBefore("?").trim('/')
+    val parts = path.split("/").filter { it.isNotBlank() }
+    if (parts.isEmpty()) return ""
+    val last = parts.last().substringBefore("@").trim().trimStart('@')
+    val hostWord = parts.first().removePrefix("www.").substringBefore(".")
+    val source = if (last.contains(".") || last.equals(hostWord, true)) hostWord else last
+    val words = source.replace(Regex("[^A-Za-z0-9]+"), " ").trim().split(" ").filter { it.isNotBlank() }
+    if (words.isEmpty()) return ""
+    return words.joinToString(" ") { w -> w.lowercase().replaceFirstChar { it.uppercase() } }.take(24)
 }
 
 /** Home-card line. Shop tags show the Google email the user picked. */
@@ -499,6 +519,8 @@ object Store {
         put("portfolioEmail", a.portfolioEmail ?: JSONObject.NULL)
         put("portfolioPhone", a.portfolioPhone ?: JSONObject.NULL)
         put("portfolioLinks", JSONArray().also { arr -> a.portfolioLinks.forEach { arr.put(it) } })
+        put("asApp", a.asApp)
+        put("appName", a.appName ?: JSONObject.NULL)
         put("portfolioSections", JSONArray().also { arr ->
             a.portfolioSections.forEach { s ->
                 arr.put(JSONObject().apply {
@@ -565,6 +587,8 @@ object Store {
                 portfolioEmail = o.str("portfolioEmail"),
                 portfolioPhone = o.str("portfolioPhone"),
                 portfolioLinks = portfolioLinks,
+                asApp = o.optBoolean("asApp", false),
+                appName = o.str("appName"),
             )
         } catch (e: Exception) {
             null

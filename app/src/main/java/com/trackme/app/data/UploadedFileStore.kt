@@ -10,6 +10,10 @@ import java.io.FileOutputStream
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.zip.GZIPInputStream
+import java.util.zip.GZIPOutputStream
+import java.util.UUID
+import android.net.Uri
+import android.provider.OpenableColumns
 
 /** 842 B, 12.4 KB, 3.2 MB. */
 fun formatBytes(bytes: Long): String {
@@ -75,6 +79,8 @@ object UploadedFileStore {
                     sha256 = o.getString("sha256"),
                     uploadedAt = o.optLong("uploadedAt", 0L),
                     portfolioName = o.str("portfolioName"),
+                    mimeType = o.str("mimeType") ?: "application/octet-stream",
+                    extension = o.str("extension") ?: "",
                 )
             }
         } catch (_: Exception) {
@@ -95,9 +101,85 @@ object UploadedFileStore {
                 put("sha256", f.sha256)
                 put("uploadedAt", f.uploadedAt)
                 put("portfolioName", f.portfolioName ?: JSONObject.NULL)
+                put("mimeType", f.mimeType)
+                put("extension", f.extension)
             })
         }
         prefs.edit().putString("files_$email", arr.toString()).apply()
+    }
+
+    /**
+     * Copies the picked file into private storage as gzip.
+     * The bytes and picture quality stay the same. The stored name is generated,
+     * and the file is never executed.
+     */
+    fun import(context: Context, uri: Uri): UploadedFile {
+        val rawName = displayName(context, uri)
+        val display = sanitizeName(rawName)
+        val ext = display.substringAfterLast('.', "")
+            .lowercase(Locale.US)
+            .filter { it.isLetterOrDigit() }
+            .take(8)
+        val mime = context.contentResolver.getType(uri) ?: "application/octet-stream"
+        val id = UUID.randomUUID().toString()
+        val temp = File(context.cacheDir, "upload-$id.bin")
+        try {
+            var size = 0L
+            val input = context.contentResolver.openInputStream(uri)
+                ?: throw FileStoreException("Couldn't read that file.")
+            input.use { stream ->
+                FileOutputStream(temp).use { out ->
+                    val buf = ByteArray(8192)
+                    while (true) {
+                        val n = stream.read(buf)
+                        if (n < 0) break
+                        size += n
+                        if (size > MAX_BYTES) throw FileStoreException("That file is over $MAX_LABEL.")
+                        out.write(buf, 0, n)
+                    }
+                }
+            }
+            if (size <= 0L) throw FileStoreException("That file is empty.")
+            val hash = sha256Hex(temp)
+            val storedName = "$id.bin.gz"
+            val stored = storedFile(context, storedName)
+            GZIPOutputStream(FileOutputStream(stored)).use { gzip ->
+                FileInputStream(temp).use { it.copyTo(gzip) }
+            }
+            stored.setExecutable(false, false)
+            return UploadedFile(
+                id = id,
+                displayName = display,
+                storedName = storedName,
+                originalSize = size,
+                storedSize = stored.length(),
+                pageCount = 0,
+                sha256 = hash,
+                uploadedAt = System.currentTimeMillis(),
+                portfolioName = null,
+                mimeType = mime,
+                extension = ext,
+            )
+        } finally {
+            temp.delete()
+        }
+    }
+
+    private fun displayName(context: Context, uri: Uri): String {
+        val cursor = context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        cursor?.use {
+            if (it.moveToFirst()) {
+                val name = it.getString(0)
+                if (!name.isNullOrBlank()) return name
+            }
+        }
+        return "file"
+    }
+
+    private fun sanitizeName(raw: String): String {
+        val base = raw.substringAfterLast('/').substringAfterLast('\\').trim()
+        val clean = base.filter { it.code in 32..126 && it !in "\\/:*?\"<>|" }.take(80)
+        return clean.ifBlank { "file" }
     }
 
     fun deleteStored(context: Context, file: UploadedFile) {
@@ -119,3 +201,5 @@ object UploadedFileStore {
         return sha256Hex(outFile).equals(file.sha256, ignoreCase = true)
     }
 }
+
+class FileStoreException(message: String) : Exception(message)

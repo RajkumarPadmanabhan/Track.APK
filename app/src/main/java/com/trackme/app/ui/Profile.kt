@@ -112,7 +112,6 @@ fun ProfileScreen(vm: TrackViewModel) {
     var confirmSignOut by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
-    var showComingSoonDialog by remember { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -179,10 +178,7 @@ fun ProfileScreen(vm: TrackViewModel) {
             Tile(
                 Modifier
                     .fillMaxWidth()
-                    .clickable {
-                        Toast.makeText(context, "Linked Devices - Coming soon!", Toast.LENGTH_SHORT).show()
-                        showComingSoonDialog = true
-                    }
+                    .clickable { vm.screen = Screen.LINKED_DEVICES }
             ) {
                 Row(
                     modifier = Modifier
@@ -217,17 +213,14 @@ fun ProfileScreen(vm: TrackViewModel) {
                                 fontSize = 16.sp
                             )
                             Text(
-                                "Pair with web dashboard (Coming soon)",
+                                "Open this app on a computer",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                     Button(
-                        onClick = {
-                            Toast.makeText(context, "Linked Devices - Coming soon!", Toast.LENGTH_SHORT).show()
-                            showComingSoonDialog = true
-                        },
+                        onClick = { vm.screen = Screen.LINKED_DEVICES },
                         shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
@@ -750,33 +743,6 @@ fun ProfileScreen(vm: TrackViewModel) {
             confirmButton = {
                 TextButton(onClick = { showAboutDialog = false }) {
                     Text("Close", fontWeight = FontWeight.Bold)
-                }
-            }
-        )
-    }
-
-    if (showComingSoonDialog) {
-        AlertDialog(
-            onDismissRequest = { showComingSoonDialog = false },
-            icon = {
-                Icon(
-                    Icons.Default.Computer,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            },
-            title = { Text("Coming Soon", fontWeight = FontWeight.Bold) },
-            text = {
-                Text(
-                    "Linked Devices & Web Dashboard pairing will be available in an upcoming update!",
-                    fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                TextButton(onClick = { showComingSoonDialog = false }) {
-                    Text("OK", fontWeight = FontWeight.Bold)
                 }
             }
         )

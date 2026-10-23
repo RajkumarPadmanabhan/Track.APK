@@ -67,6 +67,8 @@ data class UploadedFile(
     val sha256: String,
     val uploadedAt: Long,
     val portfolioName: String?,
+    val mimeType: String = "application/octet-stream",
+    val extension: String = "",
 )
 
 /** Public details read from a social profile (YouTube, Instagram, LinkedIn). */

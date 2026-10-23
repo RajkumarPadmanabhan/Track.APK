@@ -1,6 +1,11 @@
 package com.trackme.app.ui
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,18 +30,23 @@ import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.LocalFireDepartment
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.RemoveRedEye
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.material.icons.filled.Menu
@@ -63,6 +74,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import kotlin.random.Random
 import com.trackme.app.data.Platform
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
@@ -70,6 +82,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -160,6 +173,8 @@ private fun todayLabel(): String =
 @Composable
 fun HomeScreen(vm: TrackViewModel) {
     val accounts = vm.accounts
+    val platformAccounts = accounts.filter { !it.asApp }
+    val appAccounts = accounts.filter { !it.isHidden }
     val session = vm.session ?: return
     val combined = remember(accounts) { combinedActivity(accounts.filter { !it.isHidden }) }
     val streak = remember(combined) { computeStreak(combined) }
@@ -172,6 +187,10 @@ fun HomeScreen(vm: TrackViewModel) {
 
     var isRaining by remember { mutableStateOf(false) }
     var isGridView by remember { mutableStateOf(false) }
+    var appSearch by remember { mutableStateOf(false) }
+    var appQuery by remember { mutableStateOf("") }
+    var appToDelete by remember { mutableStateOf<TrackedAccount?>(null) }
+    val context = LocalContext.current
     var selectedGroupForPopup by remember { mutableStateOf<List<TrackedAccount>?>(null) }
 
     LaunchedEffect(Unit) {
@@ -225,12 +244,78 @@ fun HomeScreen(vm: TrackViewModel) {
             item {
                 HeroTile(
                     totalGrowth = totalGrowth,
-                    tags = accounts.size,
+                    tags = platformAccounts.size,
                     combined = combined,
                     filesSize = com.trackme.app.data.formatBytes(vm.totalUploadedBytes),
-                    filesCount = vm.uploadedFiles.size,
                     onFiles = { vm.screen = Screen.FILES },
                 )
+            }
+
+            if (appAccounts.isNotEmpty()) {
+                val shownApps = appAccounts.filter { acc ->
+                    val q = appQuery.trim()
+                    if (!appSearch || q.isBlank()) true
+                    else {
+                        val label = acc.appName?.ifBlank { null } ?: acc.name.ifBlank { acc.handle }
+                        label.contains(q, ignoreCase = true) || acc.handle.contains(q, ignoreCase = true)
+                    }
+                }
+                item {
+                    Row(
+                        Modifier.fillMaxWidth().padding(top = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Apps", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = {
+                            appSearch = !appSearch
+                            if (!appSearch) appQuery = ""
+                        }) {
+                            Icon(
+                                if (appSearch) Icons.Default.Close else Icons.Default.Search,
+                                contentDescription = "Search apps",
+                            )
+                        }
+                    }
+                }
+                if (appSearch) {
+                    item {
+                        OutlinedTextField(
+                            value = appQuery,
+                            onValueChange = { appQuery = it },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(16.dp),
+                            label = { Text("Search by name") },
+                        )
+                    }
+                }
+                item {
+                    if (shownApps.isEmpty()) {
+                        Text("No app with that name.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                    } else {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            items(shownApps, key = { it.id }) { acc ->
+                                val label = acc.appName?.ifBlank { null } ?: acc.name.ifBlank { acc.handle.ifBlank { acc.platform.label } }
+                                AppIcon(
+                                    name = label,
+                                    color = acc.platform.cardColor,
+                                    onClick = {
+                                        if (acc.asApp) {
+                                            val opened = runCatching {
+                                                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(acc.url)))
+                                            }.isSuccess
+                                            if (!opened) Toast.makeText(context, "Couldn't open that link", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            vm.openAccount(acc.id)
+                                        }
+                                    },
+                                    onLongClick = { if (acc.asApp) appToDelete = acc },
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
             if (hasGit || combined.isNotEmpty()) {
@@ -250,7 +335,7 @@ fun HomeScreen(vm: TrackViewModel) {
                     Spacer(Modifier.width(10.dp))
                     Box(
                         Modifier.clip(RoundedCornerShape(50)).background(Color.White).padding(horizontal = 9.dp, vertical = 2.dp),
-                    ) { Text(accounts.size.toString(), color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                    ) { Text(platformAccounts.size.toString(), color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
                     Spacer(Modifier.weight(1f))
                     Row(
                         Modifier
@@ -277,10 +362,10 @@ fun HomeScreen(vm: TrackViewModel) {
                 }
             }
 
-            if (accounts.isEmpty()) {
+            if (platformAccounts.isEmpty() && appAccounts.isEmpty()) {
                 item { EmptyTags(onScan = { vm.openAdd() }) }
-            } else if (isGridView) {
-                val gridGroups = accounts.distinctBy { it.id }.groupBy { it.platform }.values.toList()
+            } else if (isGridView && platformAccounts.isNotEmpty()) {
+                val gridGroups = platformAccounts.distinctBy { it.id }.groupBy { it.platform }.values.toList()
                 items(
                     items = gridGroups.chunked(2),
                     key = { pair -> "grid-" + pair.joinToString("-") { it.firstOrNull()?.id ?: "x" } },
@@ -298,11 +383,28 @@ fun HomeScreen(vm: TrackViewModel) {
                         if (pair.size == 1) Spacer(Modifier.weight(1f))
                     }
                 }
-            } else {
-                items(accounts.distinctBy { it.id }, key = { it.id }) { acc -> AccountCard(acc, onToggleVisibility = { vm.toggleAccountVisibility(acc.id) }) { vm.openAccount(acc.id) } }
+            } else if (platformAccounts.isNotEmpty()) {
+                items(platformAccounts.distinctBy { it.id }, key = { it.id }) { acc -> AccountCard(acc, onToggleVisibility = { vm.toggleAccountVisibility(acc.id) }) { vm.openAccount(acc.id) } }
             }
 
             item { Spacer(Modifier.height(8.dp)) }
+        }
+
+        appToDelete?.let { acc ->
+            AlertDialog(
+                onDismissRequest = { appToDelete = null },
+                title = { Text("Remove this shortcut?") },
+                text = { Text("${acc.appName ?: acc.name} is only a link. Removing it does not delete anything on the website.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.removeAccount(acc.id)
+                        appToDelete = null
+                    }) { Text("Remove") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { appToDelete = null }) { Text("Cancel") }
+                },
+            )
         }
 
         selectedGroupForPopup?.takeIf { it.size > 1 }?.let { group ->
@@ -318,6 +420,36 @@ fun HomeScreen(vm: TrackViewModel) {
                 },
             )
         }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun AppIcon(name: String, color: Color, onClick: () -> Unit, onLongClick: () -> Unit) {
+    val letter = name.trim().firstOrNull()?.uppercase() ?: "A"
+    Column(
+        modifier = Modifier.width(76.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(62.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(color),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(letter, color = Color.Black, fontSize = 26.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            name,
+            color = Color.White,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -495,7 +627,6 @@ private fun HeroTile(
     tags: Int,
     combined: Map<String, Int>,
     filesSize: String = "0 B",
-    filesCount: Int = 0,
     onFiles: () -> Unit = {},
 ) {
     var bgIndex by remember { mutableStateOf(0) }
@@ -548,7 +679,7 @@ private fun HeroTile(
             HeroSmall(tags.toString(), "Tags", Modifier.weight(0.4f))
             HeroSmall(
                 value = filesSize,
-                label = if (filesCount == 1) "File" else "Files",
+                label = "Size",
                 modifier = Modifier.weight(0.6f).clickable { onFiles() },
             )
         }

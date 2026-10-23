@@ -51,6 +51,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.CallSplit
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Fullscreen
@@ -90,10 +91,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -237,9 +238,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                 Screen.DETAIL -> DetailScreen(vm, tab)
                 Screen.NEWS -> NewsScreen(vm)
                 Screen.FILES -> FilesScreen(vm)
-                Screen.LINKED_DEVICES -> LinkedDevicesScreen(
-                    currentPlatforms = remember(vm.accounts) { com.trackme.app.data.StaticSyncManager.exportAccounts(vm.accounts) }
-                )
+                Screen.LINKED_DEVICES -> LinkedDevicesScreen(vm)
             }
         }
     }
@@ -254,6 +253,7 @@ private fun DetailScreen(vm: TrackViewModel, tab: Int) {
     val acc = vm.accounts.firstOrNull { it.id == vm.detailId }
     val profile = vm.linkProfile
     val user = vm.user
+    var confirmDelete by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         Row(
@@ -277,6 +277,28 @@ private fun DetailScreen(vm: TrackViewModel, tab: Int) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (acc != null) {
+                IconButton(onClick = { confirmDelete = true }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete this profile", tint = MaterialTheme.colorScheme.error)
+                }
+            }
+        }
+        if (confirmDelete && acc != null) {
+            AlertDialog(
+                onDismissRequest = { confirmDelete = false },
+                title = { Text("Delete this profile?") },
+                text = { Text("This removes ${acc.name} from your home page.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.removeAccount(acc.id)
+                        confirmDelete = false
+                        vm.closeDetail()
+                    }) { Text("Delete") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { confirmDelete = false }) { Text("Cancel") }
+                },
+            )
         }
         when {
             vm.loading -> Box(Modifier.fillMaxSize(), Alignment.Center) { CircularProgressIndicator() }

@@ -26,14 +26,23 @@ import com.trackme.app.data.UserSession
 import com.trackme.app.data.detectPlatform
 import com.trackme.app.data.mergeWith
 import com.trackme.app.data.nameFromEmail
+import com.trackme.app.data.nameFromLink
 import com.trackme.app.data.newAccount
 import com.trackme.app.data.NewsDataRepository
 import com.trackme.app.data.UploadedFile
+import com.trackme.app.data.DesktopLink
+import com.trackme.app.data.compactCount
+import com.trackme.app.data.formatBytes
 import com.trackme.app.data.UploadedFileStore
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.File
 import com.trackme.app.data.PdfPortfolio
-import com.trackme.app.data.PdfReadException
-import com.trackme.app.data.PdfPortfolioReader
+import com.trackme.app.data.FilePreviewer
+import com.trackme.app.data.FileStoreException
+import com.trackme.app.data.NewsTopics
 import com.trackme.app.data.UserNewsPost
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -105,12 +114,43 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     private val _isNewsLoading = MutableStateFlow(false)
     val isNewsLoading: StateFlow<Boolean> = _isNewsLoading.asStateFlow()
 
+    var newsTopicIds by mutableStateOf(
+        prefs.getString("news_topics", null)
+            ?.split(",")
+            ?.map { it.trim() }
+            ?.filter { id -> NewsTopics.all.any { it.id == id } }
+            ?.take(NewsTopics.MAX)
+            ?: emptyList()
+    )
+        private set
+
+    private var newsJob: Job? = null
+
+    fun toggleNewsTopic(id: String) {
+        if (NewsTopics.all.none { it.id == id }) return
+        val next = newsTopicIds.toMutableList()
+        if (id in next) next.remove(id)
+        else if (next.size < NewsTopics.MAX) next.add(id)
+        else return
+        newsTopicIds = next
+        prefs.edit().putString("news_topics", next.joinToString(",")).apply()
+        loadLiveNews()
+    }
+
     fun loadLiveNews() {
-        viewModelScope.launch {
+        newsJob?.cancel()
+        val topics = NewsTopics.selected(newsTopicIds)
+        if (topics.isEmpty()) {
+            _newsFeed.value = emptyList()
+            _isNewsLoading.value = false
+            return
+        }
+        newsJob = viewModelScope.launch {
             _isNewsLoading.value = true
+            _newsFeed.value = emptyList()
             val seen = LinkedHashMap<String, UserNewsPost>()
             try {
-                NewsDataRepository.liveFlow().collect { batch ->
+                NewsDataRepository.liveFlow(topics).collect { batch ->
                     for (post in batch) {
                         val key = post.sourceUrl.ifBlank { post.id }.lowercase()
                         if (key.isNotBlank()) seen.putIfAbsent(key, post)
@@ -313,62 +353,68 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         pdfScanning = false
         language = null
         query = ""
+        appName = ""
+        appNameTouched = false
     }
 
-    /** Reads every page of the picked PDF and turns its headings into a portfolio. */
-    fun onPdfSelected(context: Context, uri: android.net.Uri) {
+    var makeAsApp by mutableStateOf(false)
+    var appName by mutableStateOf("")
+    private var appNameTouched = false
+
+    fun updateMakeAsApp(on: Boolean) {
+        makeAsApp = on
+        if (on && !appNameTouched) appName = nameFromLink(input)
+    }
+
+    fun suggestAppName(link: String) {
+        if (!appNameTouched) appName = nameFromLink(link)
+    }
+
+    fun onAppNameChange(value: String) {
+        appNameTouched = true
+        appName = value.take(32)
+    }
+
+    /** Stores the picked file compressed. It is not opened, scanned into a portfolio, or run. */
+    fun onFileSelected(context: Context, uri: android.net.Uri) {
         if (pdfScanning) return
         pdfScanning = true
-        loading = true
         error = null
-        previewNote = null
         viewModelScope.launch {
             try {
-                val portfolio = PdfPortfolioReader.read(context, uri)
-                val fileId = portfolio.uploadedFileId
-                if (fileId != null && portfolio.sha256 != null) {
-                    val record = UploadedFile(
-                        id = fileId,
-                        displayName = portfolio.fileName,
-                        storedName = "$fileId.pdf.gz",
-                        originalSize = portfolio.originalSize,
-                        storedSize = portfolio.storedSize,
-                        pageCount = portfolio.pageCount,
-                        sha256 = portfolio.sha256,
-                        uploadedAt = System.currentTimeMillis(),
-                        portfolioName = portfolio.name,
-                    )
-                    uploadedFiles = listOf(record) + uploadedFiles.filter { it.id != record.id }
-                    session?.let { UploadedFileStore.save(prefs, it.email, uploadedFiles) }
+                val record = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    UploadedFileStore.import(context.applicationContext, uri)
                 }
-                platform = Platform.PORTFOLIO
-                pdfPortfolio = portfolio
-                val handle = portfolio.name.lowercase()
-                    .replace(Regex("[^a-z0-9]+"), "-").trim('-')
-                    .ifBlank { "portfolio" }
-                val parsed = ParsedProfile(handle, "pdf:" + portfolio.fileName)
-                linkProfile = parsed
-                preview = PublicProfile(
-                    name = portfolio.name,
-                    handle = "@$handle",
-                    subtitle = portfolio.headline,
-                    description = portfolio.summary,
-                    imageUrl = null,
-                    stats = listOf(
-                        "Sections" to portfolio.sections.size.toString(),
-                        "Pages" to portfolio.pageCount.toString(),
-                    ),
-                    portfolio = portfolio,
-                )
-                checkCrossAccountDuplicate()
-            } catch (e: PdfReadException) {
+                uploadedFiles = listOf(record) + uploadedFiles.filter { it.id != record.id }
+                session?.let { UploadedFileStore.save(prefs, it.email, uploadedFiles) }
+                android.widget.Toast.makeText(
+                    context,
+                    "Saved. The file was not opened or run.",
+                    android.widget.Toast.LENGTH_SHORT,
+                ).show()
+            } catch (e: FileStoreException) {
                 error = e.message
             } catch (_: Throwable) {
-                error = "Couldn't read this PDF. Pick the original file and try again."
+                error = "Couldn't save that file."
             } finally {
                 pdfScanning = false
-                loading = false
             }
+        }
+    }
+
+    fun prepareFilePreview(context: Context, file: UploadedFile, onDone: (FilePreviewer.Result) -> Unit) {
+        viewModelScope.launch {
+            val result = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    FilePreviewer.prepare(context.applicationContext, file)
+                }
+            } catch (_: Throwable) {
+                FilePreviewer.Result(
+                    FilePreviewer.Kind.BLOCKED,
+                    note = "This file is saved. It was not opened, so nothing in it can run.",
+                )
+            }
+            onDone(result)
         }
     }
 
@@ -407,6 +453,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun signOut() {
+        stopDesktop()
         Store.saveUser(prefs, null)
         session = null
         accounts = emptyList()
@@ -415,6 +462,104 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         showAdd = false
         detailId = null
         resetScan()
+    }
+
+    var desktopUrl by mutableStateOf<String?>(null)
+    var desktopCode by mutableStateOf<String?>(null)
+    var desktopError by mutableStateOf<String?>(null)
+
+    fun startDesktop() {
+        val url = DesktopLink.start(object : DesktopLink.Bridge {
+            override fun stateJson(): String = desktopState()
+            override fun act(type: String, id: String) = desktopAct(type, id)
+            override fun file(id: String): File? = desktopFile(id)
+        })
+        desktopUrl = url
+        desktopCode = DesktopLink.code
+        desktopError = if (url == null) {
+            "Connect the phone to Wi-Fi, then open Linked Devices again. A computer cannot reach the phone over mobile data."
+        } else {
+            null
+        }
+    }
+
+    fun stopDesktop() {
+        DesktopLink.stop()
+        desktopUrl = null
+        desktopCode = null
+    }
+
+    private fun desktopAct(type: String, id: String) {
+        val run = Runnable {
+            when (type) {
+                "home" -> closeDetail()
+                "news" -> {
+                    screen = Screen.NEWS
+                    if (newsFeed.value.isEmpty()) loadLiveNews()
+                }
+                "files" -> screen = Screen.FILES
+                "open" -> if (id.isNotBlank()) openAccount(id)
+                "refresh" -> refreshAccounts(true)
+            }
+        }
+        if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run.run() else {
+            android.os.Handler(android.os.Looper.getMainLooper()).post(run)
+        }
+    }
+
+    private fun desktopFile(id: String): File? {
+        val item = uploadedFiles.firstOrNull { it.id == id } ?: return null
+        val out = File(getApplication<Application>().cacheDir, "desk-" + item.id + ".pdf")
+        return if (UploadedFileStore.writeOriginal(getApplication(), item, out)) out else null
+    }
+
+    private fun desktopState(): String {
+        val root = JSONObject()
+        root.put("name", session?.name ?: "Track")
+        root.put("screen", screen.name)
+        val cards = JSONArray()
+        accounts.filter { !it.isHidden }.forEach { acc ->
+            cards.put(JSONObject().apply {
+                put("id", acc.id)
+                put("platform", acc.platform.label)
+                put("name", acc.name)
+                put("handle", acc.handle)
+                put("count", acc.count?.takeIf { it > 0 }?.let { compactCount(it) } ?: "")
+                put("countLabel", if (acc.count != null && acc.count > 0) acc.countLabel else "")
+            })
+        }
+        root.put("accounts", cards)
+        val open = accounts.firstOrNull { it.id == detailId }
+        if (open != null) {
+            val extras = JSONArray()
+            open.extras.forEach { (label, value) ->
+                if (value.isNotBlank()) extras.put(JSONObject().put("label", label).put("value", value))
+            }
+            val sections = JSONArray()
+            open.portfolioSections.forEach { sec ->
+                sections.put(JSONObject().put("title", sec.heading.ifBlank { sec.category }).put("items", JSONArray(sec.items)))
+            }
+            root.put("detail", JSONObject().apply {
+                put("platform", open.platform.label)
+                put("name", open.name)
+                put("handle", open.handle)
+                put("count", open.count?.takeIf { it > 0 }?.let { compactCount(it) } ?: "")
+                put("countLabel", if (open.count != null && open.count > 0) open.countLabel else "")
+                put("extras", extras)
+                put("sections", sections)
+            })
+        }
+        val news = JSONArray()
+        newsFeed.value.take(40).forEach { post ->
+            news.put(JSONObject().put("title", post.title).put("source", post.sourceName).put("url", post.sourceUrl))
+        }
+        root.put("news", news)
+        val files = JSONArray()
+        uploadedFiles.forEach { file ->
+            files.put(JSONObject().put("id", file.id).put("name", file.displayName).put("size", formatBytes(file.originalSize)))
+        }
+        root.put("files", files)
+        return root.toString()
     }
 
     fun updateName(name: String) {
@@ -498,11 +643,51 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
+    /** A home-screen shortcut. Stores the link and the name only. Nothing is fetched. */
+    fun addDummyApp(): Boolean {
+        val raw = input.trim()
+        if (raw.isBlank()) {
+            error = "Paste a link"
+            return false
+        }
+        val url = if (raw.startsWith("http://") || raw.startsWith("https://")) raw else "https://$raw"
+        val label = appName.trim().ifBlank { nameFromLink(url) }.ifBlank { "App" }.take(32)
+        val id = "app:" + url.lowercase()
+        val shortcut = TrackedAccount(
+            id = id,
+            platform = detectPlatform(url) ?: platform,
+            handle = label,
+            url = url,
+            name = label,
+            avatarUrl = null,
+            subtitle = null,
+            count = null,
+            countLabel = "",
+            extras = emptyList(),
+            history = emptyMap(),
+            activity = emptyMap(),
+            addedAt = Days.key(),
+            syncedAt = System.currentTimeMillis(),
+            asApp = true,
+            appName = label,
+        )
+        accounts = accounts.filter { it.id != id } + shortcut
+        persist()
+        closeAdd()
+        return true
+    }
+
     fun addDraft(linkedEmail: String? = null): Boolean {
         if (checkCrossAccountDuplicate()) return false
         val base = currentDraft() ?: return false
         val mail = linkedEmail?.trim()?.lowercase()?.takeIf { it.contains("@") }
-        val draft = if (mail == null) base else base.copy(linkedEmail = mail)
+        val named = if (makeAsApp) {
+            val label = appName.trim().ifBlank { nameFromLink(base.url).ifBlank { base.name } }.take(32)
+            base.copy(asApp = true, appName = label)
+        } else {
+            base.copy(asApp = false, appName = null)
+        }
+        val draft = if (mail == null) named else named.copy(linkedEmail = mail)
         val existing = accounts.firstOrNull { it.id == draft.id }
         accounts = if (existing != null) {
             accounts.map { if (it.id == draft.id) it.mergeWith(draft) else it }
@@ -530,7 +715,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val ok = try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val tmp = java.io.File(context.cacheDir, "download_${file.id}.pdf")
+                    val ext = file.extension.ifBlank { "bin" }.filter { it.isLetterOrDigit() }.take(8).ifBlank { "bin" }
+                    val tmp = java.io.File(context.cacheDir, "download_${file.id}.$ext")
                     val written = UploadedFileStore.writeOriginal(context.applicationContext, file, tmp)
                     if (!written) {
                         false
@@ -540,38 +726,6 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                         } != null
                     }
                 }
-            } catch (_: Throwable) {
-                false
-            }
-            onDone(ok)
-        }
-    }
-
-    /** Opens the original PDF in the phone's PDF viewer. Nothing is executed by this app. */
-    fun previewUploadedFile(context: Context, file: UploadedFile, onDone: (Boolean) -> Unit) {
-        viewModelScope.launch {
-            val ok = try {
-                val previewFile = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                    val out = java.io.File(
-                        java.io.File(context.cacheDir, "pdf_preview").apply { mkdirs() },
-                        "${file.id}.pdf",
-                    )
-                    if (UploadedFileStore.writeOriginal(context.applicationContext, file, out)) out else null
-                } ?: return@launch onDone(false)
-                val uri = androidx.core.content.FileProvider.getUriForFile(
-                    context,
-                    "${context.packageName}.fileprovider",
-                    previewFile,
-                )
-                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                    setDataAndType(uri, "application/pdf")
-                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                context.startActivity(android.content.Intent.createChooser(intent, "Preview PDF").apply {
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                })
-                true
             } catch (_: Throwable) {
                 false
             }
@@ -675,7 +829,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Re-reads every saved tag and stores today's numbers. Skips if everything is fresh. */
     fun refreshAccounts(force: Boolean = false) {
-        val list = accounts
+        val list = accounts.filter { !it.asApp }
         if (refreshing || list.isEmpty()) return
         val now = System.currentTimeMillis()
         val stale = list.any {

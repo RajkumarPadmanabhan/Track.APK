@@ -3,6 +3,8 @@ package com.trackme.app.ui
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -20,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.ViewList
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -35,7 +38,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.trackme.app.data.NewsTopics
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
     val newsFeed by vm.newsFeed.collectAsState()
@@ -76,9 +82,38 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
                 modifier = Modifier.size(22.dp).clickable { isGridView = true },
             )
         }
+        Text(
+            "Choose up to 5. Tap again to remove one, then pick another.",
+            color = Color.Gray,
+            fontSize = 12.sp,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        FlowRow(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            val picked = vm.newsTopicIds
+            NewsTopics.all.forEach { topic ->
+                val on = topic.id in picked
+                FilterChip(
+                    selected = on,
+                    onClick = { vm.toggleNewsTopic(topic.id) },
+                    enabled = on || picked.size < NewsTopics.MAX,
+                    label = { Text(topic.label) },
+                )
+            }
+        }
         Spacer(modifier = Modifier.height(12.dp))
 
-        if (isNewsLoading && stories.isEmpty()) {
+        if (vm.newsTopicIds.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text("Pick up to 5 topics to see headlines.", color = Color.Gray)
+            }
+        } else if (isNewsLoading && stories.isEmpty()) {
             Column(
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Center,
@@ -92,7 +127,7 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Text("No live headlines right now.", color = Color.Gray)
+                Text("No headlines for those topics right now.", color = Color.Gray)
             }
         } else if (isGridView) {
             LazyVerticalGrid(

@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -25,7 +26,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
 import androidx.compose.material3.OutlinedButton
@@ -38,6 +39,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -57,6 +59,8 @@ import com.trackme.app.auth.GoogleAuthManager
 import com.trackme.app.data.PdfPortfolio
 import com.trackme.app.data.Platform
 import com.trackme.app.data.TrackedAccount
+import com.trackme.app.data.detectPlatform
+import com.trackme.app.data.nameFromLink
 import com.trackme.app.data.compactCount
 import com.trackme.app.data.formatRupees
 import com.trackme.app.data.parseCount
@@ -73,12 +77,12 @@ fun AddTagSheet(vm: TrackViewModel) {
     val p = vm.platform
     val shop = p == Platform.AMAZON || p == Platform.FLIPKART
     val draft = vm.currentDraft()
-    val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    val filePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) {
             runCatching {
                 ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
             }
-            vm.onPdfSelected(ctx, uri)
+            vm.onFileSelected(ctx, uri)
         }
     }
 
@@ -108,7 +112,7 @@ fun AddTagSheet(vm: TrackViewModel) {
             )
 
             OutlinedButton(
-                onClick = { pdfPicker.launch(arrayOf("application/pdf")) },
+                onClick = { filePicker.launch(arrayOf("*/*")) },
                 enabled = !vm.pdfScanning,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(50),
@@ -116,15 +120,15 @@ fun AddTagSheet(vm: TrackViewModel) {
                 if (vm.pdfScanning) {
                     CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.5.dp)
                     Spacer(Modifier.width(10.dp))
-                    Text("Reading every page…", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("Saving…", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 } else {
-                    Icon(Icons.Default.PictureAsPdf, null, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.UploadFile, null, modifier = Modifier.size(20.dp))
                     Spacer(Modifier.width(10.dp))
-                    Text("Upload PDF (resume)", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    Text("Upload a file", fontSize = 15.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Text(
-                "Up to 15 MB. The file is checked before reading: real PDF header, page structure, and no scripts or auto-open actions. The whole PDF is then read on this phone and turned into a portfolio from its own headings.",
+                "Up to 15 MB. Any file type. It is compressed on this phone without changing the original data or picture quality, stored under a private name, and not opened or run.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -148,7 +152,10 @@ fun AddTagSheet(vm: TrackViewModel) {
 
             OutlinedTextField(
                 value = vm.input,
-                onValueChange = { vm.input = it },
+                onValueChange = {
+                    vm.input = it
+                    vm.suggestAppName(it)
+                },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(20.dp),
@@ -158,7 +165,36 @@ fun AddTagSheet(vm: TrackViewModel) {
                 keyboardActions = KeyboardActions(onGo = { vm.scan() }),
             )
 
-            if (p == Platform.YOUTUBE) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Make as app", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(
+                        "A shortcut only. It keeps this link and name, and does not scan the page.",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = vm.makeAsApp,
+                    onCheckedChange = { vm.updateMakeAsApp(it) },
+                )
+            }
+            if (vm.makeAsApp) {
+                OutlinedTextField(
+                    value = vm.appName,
+                    onValueChange = { vm.onAppNameChange(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(20.dp),
+                    label = { Text("App name") },
+                    placeholder = { Text(nameFromLink(vm.input).ifBlank { "From the link" }) },
+                )
+            }
+
+            if (!vm.makeAsApp && p == Platform.YOUTUBE) {
                 OutlinedTextField(
                     value = vm.youtubeKey,
                     onValueChange = { vm.updateYoutubeKey(it) },
@@ -168,11 +204,30 @@ fun AddTagSheet(vm: TrackViewModel) {
                     label = { Text("YouTube API key (free, from Google Cloud)") },
                 )
             }
-            p.note?.let {
+            if (!vm.makeAsApp) p.note?.let {
                 Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Button(
+            if (vm.makeAsApp) {
+                AppDraftPreview(
+                    vm.appName.ifBlank { nameFromLink(vm.input).ifBlank { "App" } },
+                    (detectPlatform(vm.input) ?: p).cardColor,
+                )
+                Button(
+                    onClick = {
+                        if (vm.addDummyApp()) {
+                            Toast.makeText(ctx, "Added to your app row", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(54.dp),
+                    shape = RoundedCornerShape(50),
+                    colors = ButtonDefaults.buttonColors(containerColor = Brand.Coral, contentColor = Color.Black),
+                ) {
+                    Text("Add app", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            if (!vm.makeAsApp) Button(
                 onClick = { vm.scan() },
                 enabled = !vm.loading,
                 modifier = Modifier.fillMaxWidth().height(54.dp),
@@ -190,8 +245,12 @@ fun AddTagSheet(vm: TrackViewModel) {
                 Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
             }
 
-            if (draft != null && vm.error == null && !vm.loading) {
-                if (vm.pdfPortfolio != null) PdfPortfolioPreview(vm.pdfPortfolio!!) else DraftCard(draft)
+            if (!vm.makeAsApp && draft != null && vm.error == null && !vm.loading) {
+                if (vm.pdfPortfolio != null) {
+                    PdfPortfolioPreview(vm.pdfPortfolio!!)
+                } else {
+                    DraftCard(draft)
+                }
                 vm.previewNote?.let {
                     Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -236,6 +295,8 @@ fun AddTagSheet(vm: TrackViewModel) {
                         when {
                             shop && tracked -> "Choose email to update"
                             shop -> "Choose email"
+                            tracked && vm.makeAsApp -> "Update app"
+                            vm.makeAsApp -> "Add app"
                             tracked -> "Update on home"
                             else -> "Add to home"
                         },
@@ -245,6 +306,21 @@ fun AddTagSheet(vm: TrackViewModel) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AppDraftPreview(name: String, color: Color) {
+    val letter = name.trim().firstOrNull()?.uppercase() ?: "A"
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Box(
+            Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)).background(color),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(letter, color = Color.Black, fontSize = 30.sp, fontWeight = FontWeight.Bold)
+        }
+        Spacer(Modifier.height(8.dp))
+        Text(name.ifBlank { "App" }, fontWeight = FontWeight.SemiBold)
     }
 }
 
