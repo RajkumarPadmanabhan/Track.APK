@@ -3,6 +3,7 @@ package com.trackme.app.data
 import android.text.Html
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -65,6 +66,31 @@ object SocialApi {
                 country,
             ).joinToString(" · ").ifBlank { null }
 
+            val channelId = o.optString("id")
+            val recentVideos = mutableListOf<YouTubeVideoItem>()
+            if (channelId.isNotBlank() && apiKey.isNotBlank()) {
+                try {
+                    val searchBody = Http.get(
+                        "https://www.googleapis.com/youtube/v3/search" +
+                            "?part=snippet&channelId=${enc(channelId)}&order=date&type=video&maxResults=10&key=${enc(apiKey)}"
+                    )
+                    val searchItems = JSONObject(searchBody).optJSONArray("items") ?: JSONArray()
+                    for (i in 0 until searchItems.length()) {
+                        val item = searchItems.getJSONObject(i)
+                        val vId = item.optJSONObject("id")?.optString("videoId") ?: continue
+                        val vSn = item.optJSONObject("snippet") ?: continue
+                        val vThumb = vSn.optJSONObject("thumbnails")?.optJSONObject("medium")?.optString("url")
+                            ?: vSn.optJSONObject("thumbnails")?.optJSONObject("high")?.optString("url") ?: ""
+                        recentVideos += YouTubeVideoItem(
+                            id = vId,
+                            title = vSn.optString("title"),
+                            publishedAt = vSn.optString("publishedAt").take(10),
+                            thumbnailUrl = vThumb
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
+
             PublicProfile(
                 name = sn.optString("title", profile.handle),
                 handle = sn.str("customUrl") ?: profile.handle,
@@ -77,6 +103,7 @@ object SocialApi {
                     "Views" to count(st?.optString("viewCount")),
                     "Videos" to count(st?.optString("videoCount")),
                 ),
+                recentVideos = recentVideos,
             )
         }
 
@@ -119,7 +146,7 @@ object SocialApi {
         )
     }
 
-    private fun parseInstagram(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
+    private suspend fun parseInstagram(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
         val desc = og["description"].orEmpty()
         val m = Regex(
             """([\d.,]+[KMBkmb]?)\s+Followers,\s+([\d.,]+[KMBkmb]?)\s+Following,\s+([\d.,]+[KMBkmb]?)\s+Posts""",
@@ -131,13 +158,22 @@ object SocialApi {
                 "Following" to m.groupValues[2],
                 "Posts" to m.groupValues[3],
             )
-        } else emptyList()
+        } else {
+            val counts = runCatching { InstagramScraper.fetchCountsOnly(profile.url) }.getOrNull()
+            if (counts != null) {
+                listOf(
+                    "Followers" to counts.followers,
+                    "Following" to counts.following,
+                    "Posts" to counts.posts,
+                )
+            } else emptyList()
+        }
         val name = title.substringBefore(" (@").substringBefore(" •").trim().ifBlank { profile.handle }
         return PublicProfile(
             name = name,
-            handle = "@${profile.handle}",
-            subtitle = null,
-            description = if (m == null) desc.take(300).ifBlank { null } else null,
+            handle = "@${profile.handle.trimStart('@')}",
+            subtitle = "Instagram Public Profile",
+            description = if (m == null && stats.isEmpty()) desc.take(300).ifBlank { null } else null,
             imageUrl = og["image"],
             stats = stats,
         )
@@ -175,6 +211,7 @@ object SocialApi {
 
     private fun looksLikeLogin(title: String): Boolean {
         val t = title.lowercase().trim()
+        if (t.contains("followers") || t.contains("following")) return false
         return t == "instagram" || t == "linkedin" || t == "facebook" ||
             listOf("log in", "login", "sign in", "sign up", "authwall").any { t.contains(it) }
     }
@@ -185,11 +222,12 @@ object SocialApi {
         conn.instanceFollowRedirects = true
         conn.connectTimeout = 15000
         conn.readTimeout = 20000
-        conn.setRequestProperty(
-            "User-Agent",
-            "Mozilla/5.0 (Linux; Android 13; TrackMe) AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/120.0 Mobile Safari/537.36"
-        )
+        val ua = if (platform == Platform.INSTAGRAM || platform == Platform.FACEBOOK) {
+            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+        } else {
+            "Mozilla/5.0 (Linux; Android 13; TrackMe) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+        }
+        conn.setRequestProperty("User-Agent", ua)
         conn.setRequestProperty("Accept", "text/html")
         conn.setRequestProperty("Accept-Language", "en")
         try {

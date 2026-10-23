@@ -38,6 +38,7 @@ data class PublicProfile(
     val description: String?,
     val imageUrl: String?,
     val stats: List<Pair<String, String>>,
+    val recentVideos: List<YouTubeVideoItem> = emptyList(),
 )
 
 data class YouTubeVideoItem(

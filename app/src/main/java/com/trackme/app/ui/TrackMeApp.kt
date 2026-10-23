@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -34,7 +35,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import com.trackme.app.data.YouTubeVideoItem
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -457,6 +462,7 @@ private fun LinkProfileCard(
 
 @Composable
 private fun PreviewCard(p: PublicProfile) {
+    val ctx = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Tile(Modifier.fillMaxWidth()) {
             Row(
@@ -491,6 +497,101 @@ private fun PreviewCard(p: PublicProfile) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 row.forEach { (label, value) -> BigTile(label, value, null, Modifier.weight(1f)) }
                 if (row.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+
+        if (p.recentVideos.isNotEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "🎬 Recent Videos & Shorts",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(p.recentVideos) { video ->
+                    VideoPreviewCard(video) {
+                        val videoUrl = if (video.title.contains("#shorts", ignoreCase = true)) {
+                            "https://www.youtube.com/shorts/${video.id}"
+                        } else {
+                            "https://www.youtube.com/watch?v=${video.id}"
+                        }
+                        openUrl(ctx, videoUrl)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun VideoPreviewCard(video: YouTubeVideoItem, onClick: () -> Unit) {
+    val ctx = LocalContext.current
+    val isShort = video.title.contains("#shorts", ignoreCase = true)
+    val cardWidth = if (isShort) 130.dp else 200.dp
+    val aspect = if (isShort) 9f / 16f else 16f / 9f
+
+    Tile(
+        Modifier
+            .width(cardWidth)
+            .clickable(onClick = onClick)
+    ) {
+        Column(Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(aspect)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.Black),
+                contentAlignment = Alignment.Center
+            ) {
+                if (video.thumbnailUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = video.thumbnailUrl,
+                        contentDescription = video.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(
+                        Icons.Default.PlayCircle,
+                        contentDescription = "Play",
+                        tint = Brand.Coral,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.Black.copy(alpha = 0.7f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Text(
+                        if (isShort) "⚡ Short" else "▶ Video",
+                        color = Color.White,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Text(
+                video.title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            if (video.publishedAt.isNotBlank()) {
+                Text(
+                    date(video.publishedAt),
+                    fontSize = 11.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
     }

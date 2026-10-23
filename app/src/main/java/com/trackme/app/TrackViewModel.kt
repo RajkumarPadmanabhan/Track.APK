@@ -40,6 +40,19 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
     private val prefs = app.getSharedPreferences("trackme", Context.MODE_PRIVATE)
 
+    // Live real-time ticker updating every second
+    var liveTicker by mutableStateOf(System.currentTimeMillis())
+        private set
+
+    init {
+        viewModelScope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(1000L)
+                liveTicker = System.currentTimeMillis()
+            }
+        }
+    }
+
     // ---------- Session + tracked tags ----------
     var session by mutableStateOf(Store.loadUser(prefs))
         private set
