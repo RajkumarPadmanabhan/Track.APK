@@ -393,7 +393,7 @@ private fun AccountCard(acc: TrackedAccount, onClick: () -> Unit) {
     val notchH = 70.dp
     val shape = remember { NotchShape(28.dp, notchW, notchH) }
 
-    Box(Modifier.fillMaxWidth().height(216.dp)) {
+    Box(Modifier.fillMaxWidth().height(232.dp)) {
         Box(
             Modifier
                 .fillMaxSize()
@@ -418,15 +418,14 @@ private fun AccountCard(acc: TrackedAccount, onClick: () -> Unit) {
                         )
                     }
                 }
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
-                        Text(m.big, color = ink, fontSize = 46.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, lineHeight = 50.sp)
-                        Spacer(Modifier.height(6.dp))
+                        Text(m.big, color = ink, fontSize = 38.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, lineHeight = 42.sp)
+                        Spacer(Modifier.height(4.dp))
                         Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
-                        Spacer(Modifier.height(14.dp))
                     }
-                    WaveformBars(m.spark, Modifier.width(92.dp).height(48.dp), ink, ink.copy(alpha = 0.18f))
+                    WaveformBars(m.spark, Modifier.width(92.dp).height(44.dp), ink, ink.copy(alpha = 0.18f))
                 }
             }
             // Right of the notch: two small secondary numbers
