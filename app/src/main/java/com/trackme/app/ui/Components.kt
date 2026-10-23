@@ -371,7 +371,14 @@ fun AccountAvatar(acc: com.trackme.app.data.TrackedAccount, size: Dp = 44.dp) {
 // ---------- Bottom navigation: Home | scan | Profile ----------
 
 @Composable
-fun HomeNav(selected: Screen, onHome: () -> Unit, onProfile: () -> Unit, onScan: () -> Unit, onNews: () -> Unit) {
+fun HomeNav(
+    selected: Screen,
+    onHome: () -> Unit,
+    onProfile: () -> Unit,
+    onScan: () -> Unit,
+    onNews: () -> Unit,
+    onFiles: () -> Unit = {},
+) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -406,7 +413,12 @@ fun HomeNav(selected: Screen, onHome: () -> Unit, onProfile: () -> Unit, onScan:
                         }
                     )
                 }
-                .clickable { onScan() },
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onTap = { onScan() },
+                        onDoubleTap = { onFiles() },
+                    )
+                },
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan a tag", tint = Color.Black)

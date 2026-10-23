@@ -124,7 +124,7 @@ fun AddTagSheet(vm: TrackViewModel) {
                 }
             }
             Text(
-                "The whole PDF is read on this phone and turned into a portfolio from its own headings. Nothing is added that is not in the file.",
+                "Up to 15 MB. The file is checked before reading: real PDF header, page structure, and no scripts or auto-open actions. The whole PDF is then read on this phone and turned into a portfolio from its own headings.",
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

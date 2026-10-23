@@ -224,7 +224,8 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                     onHome = { vm.screen = Screen.HOME },
                     onProfile = { vm.screen = Screen.PROFILE },
                     onScan = { vm.openAdd() },
-                    onNews = { vm.screen = Screen.NEWS }
+                    onNews = { vm.screen = Screen.NEWS },
+                    onFiles = { vm.screen = Screen.FILES },
                 )
             }
         },
@@ -235,6 +236,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                 Screen.PROFILE -> ProfileScreen(vm)
                 Screen.DETAIL -> DetailScreen(vm, tab)
                 Screen.NEWS -> NewsScreen(vm)
+                Screen.FILES -> FilesScreen(vm)
                 Screen.LINKED_DEVICES -> LinkedDevicesScreen(
                     currentPlatforms = remember(vm.accounts) { com.trackme.app.data.StaticSyncManager.exportAccounts(vm.accounts) }
                 )

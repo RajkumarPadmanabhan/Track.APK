@@ -17,7 +17,11 @@ import com.tom_roush.pdfbox.text.PDFTextStripper
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.nio.charset.StandardCharsets
+import java.util.UUID
+import java.util.zip.GZIPOutputStream
 
 class PdfReadException(message: String) : Exception(message)
 
@@ -31,43 +35,94 @@ object PdfPortfolioReader {
     suspend fun read(context: Context, uri: Uri): PdfPortfolio = withContext(Dispatchers.IO) {
         val appContext = context.applicationContext
         val fileName = displayName(appContext, uri) ?: "Resume.pdf"
+        if (!fileName.endsWith(".pdf", ignoreCase = true)) {
+            throw PdfReadException("Only .pdf files are accepted.")
+        }
         val file = copyToCache(appContext, uri, fileName)
-
-        var usedOcr = false
-        var pageCount = 0
-        var text = ""
         try {
-            PDFBoxResourceLoader.init(appContext)
-            PDDocument.load(file).use { doc ->
-                pageCount = doc.numberOfPages
-                val stripper = PDFTextStripper().apply { sortByPosition = true }
-                text = stripper.getText(doc).orEmpty()
-            }
-        } catch (e: OutOfMemoryError) {
-            throw PdfReadException("This PDF is too large to read on this phone.")
-        } catch (e: Exception) {
-            if (pageCount == 0) {
-                // Fall through to OCR, which can still open the file page by page.
-            } else {
-                throw PdfReadException("Couldn't read this PDF. Pick the original file and try again.")
-            }
-        }
+            checkHeader(file)
+            checkForActiveContent(file)
 
-        val letters = text.count { it.isLetterOrDigit() }
-        if (pageCount == 0 || letters < 40 * maxOf(pageCount, 1)) {
-            val ocr = ocrAllPages(appContext, uri)
-            if (ocr.second.count { it.isLetterOrDigit() } > letters) {
-                text = ocr.second
-                usedOcr = true
-                if (pageCount == 0) pageCount = ocr.first
+            var usedOcr = false
+            var pageCount = 0
+            var text = ""
+            try {
+                PDFBoxResourceLoader.init(appContext)
+                PDDocument.load(file).use { doc ->
+                    if (doc.isEncrypted) {
+                        throw PdfReadException("Password-protected PDFs cannot be read. Upload an unlocked copy.")
+                    }
+                    pageCount = doc.numberOfPages
+                    if (pageCount <= 0) {
+                        throw PdfReadException("This file looks like a PDF but has no pages, so it was rejected.")
+                    }
+                    val stripper = PDFTextStripper().apply { sortByPosition = true }
+                    text = stripper.getText(doc).orEmpty()
+                }
+            } catch (e: PdfReadException) {
+                throw e
+            } catch (e: OutOfMemoryError) {
+                throw PdfReadException("This PDF is too large to read on this phone.")
+            } catch (e: Exception) {
+                throw PdfReadException("This file could not be read as a real PDF, so it was rejected.")
             }
+
+            val letters = text.count { it.isLetterOrDigit() }
+            if (letters < 40 * maxOf(pageCount, 1)) {
+                val ocr = ocrAllPages(appContext, uri)
+                if (ocr.second.count { it.isLetterOrDigit() } > letters) {
+                    text = ocr.second
+                    usedOcr = true
+                }
+            }
+            if (text.count { it.isLetterOrDigit() } < 20) {
+                throw PdfReadException(
+                    "No readable text was found in this PDF. If it is a photo or scan, upload a clearer PDF."
+                )
+            }
+            val portfolio = parse(text, fileName, maxOf(pageCount, 1), usedOcr)
+            val stored = storeCompressed(appContext, file)
+            portfolio.copy(
+                uploadedFileId = stored.first,
+                originalSize = file.length(),
+                storedSize = stored.second,
+                sha256 = sha256Hex(file),
+            )
+        } finally {
+            runCatching { file.delete() }
         }
-        if (text.count { it.isLetterOrDigit() } < 20) {
+    }
+
+    /** Every real PDF starts with these five bytes. Anything else is rejected first. */
+    private fun checkHeader(file: File) {
+        val header = ByteArray(5)
+        val read = FileInputStream(file).use { it.read(header) }
+        val magic = if (read == 5) String(header, StandardCharsets.US_ASCII) else ""
+        if (magic != "%PDF-") {
+            throw PdfReadException("This is not a PDF file. Only real PDF files are accepted.")
+        }
+    }
+
+    /** Scripts and auto-run actions are rejected, so a dressed-up file cannot act on open. */
+    private fun checkForActiveContent(file: File) {
+        val raw = String(file.readBytes(), StandardCharsets.ISO_8859_1)
+        val banned = listOf("/JS", "/JavaScript", "/Launch", "/OpenAction", "/EmbeddedFile", "/RichMedia")
+        if (banned.any { it in raw }) {
             throw PdfReadException(
-                "No readable text was found in this PDF. If it is a photo or scan, upload a clearer PDF."
+                "This PDF contains scripts or auto-open actions, so it was rejected. Upload a plain resume PDF."
             )
         }
-        parse(text, fileName, maxOf(pageCount, 1), usedOcr)
+    }
+
+    /** Lossless copy in the app's private folder, under a generated name. */
+    private fun storeCompressed(context: Context, original: File): Pair<String, Long> {
+        val id = UUID.randomUUID().toString()
+        val dir = UploadedFileStore.dir(context)
+        val stored = File(dir, "$id.pdf.gz")
+        FileInputStream(original).use { input ->
+            GZIPOutputStream(FileOutputStream(stored)).use { gz -> input.copyTo(gz) }
+        }
+        return id to stored.length()
     }
 
     private fun displayName(context: Context, uri: Uri): String? {
@@ -85,8 +140,25 @@ object PdfPortfolioReader {
         val out = File(context.cacheDir, "pdf_${System.currentTimeMillis()}_$safe")
         val input = context.contentResolver.openInputStream(uri)
             ?: throw PdfReadException("Couldn't open this PDF.")
-        input.use { stream ->
-            FileOutputStream(out).use { stream.copyTo(it) }
+        var total = 0L
+        try {
+            input.use { stream ->
+                FileOutputStream(out).use { sink ->
+                    val buffer = ByteArray(8192)
+                    while (true) {
+                        val read = stream.read(buffer)
+                        if (read < 0) break
+                        total += read
+                        if (total > UploadedFileStore.maxBytes()) {
+                            throw PdfReadException("This PDF is larger than ${UploadedFileStore.MAX_LABEL}. Upload a smaller file.")
+                        }
+                        sink.write(buffer, 0, read)
+                    }
+                }
+            }
+        } catch (e: PdfReadException) {
+            runCatching { out.delete() }
+            throw e
         }
         if (out.length() <= 0L) throw PdfReadException("This PDF file is empty.")
         return out

@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="shared_images" path="images/"/>
     <cache-path name="stories" path="stories/"/>
+    <cache-path name="pdf_preview" path="pdf_preview/"/>
 </paths>

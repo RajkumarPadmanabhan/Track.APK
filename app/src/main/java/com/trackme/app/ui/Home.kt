@@ -222,7 +222,16 @@ fun HomeScreen(vm: TrackViewModel) {
 
 
 
-            item { HeroTile(totalGrowth, accounts.size, combined) }
+            item {
+                HeroTile(
+                    totalGrowth = totalGrowth,
+                    tags = accounts.size,
+                    combined = combined,
+                    filesSize = com.trackme.app.data.formatBytes(vm.totalUploadedBytes),
+                    filesCount = vm.uploadedFiles.size,
+                    onFiles = { vm.screen = Screen.FILES },
+                )
+            }
 
             if (hasGit || combined.isNotEmpty()) {
                 val totalGitContributions = combined.values.sum()
@@ -485,6 +494,9 @@ private fun HeroTile(
     totalGrowth: Long,
     tags: Int,
     combined: Map<String, Int>,
+    filesSize: String = "0 B",
+    filesCount: Int = 0,
+    onFiles: () -> Unit = {},
 ) {
     var bgIndex by remember { mutableStateOf(0) }
     val bgColors = remember {
@@ -534,6 +546,11 @@ private fun HeroTile(
                 )
             }
             HeroSmall(tags.toString(), "Tags", Modifier.weight(0.4f))
+            HeroSmall(
+                value = filesSize,
+                label = if (filesCount == 1) "File" else "Files",
+                modifier = Modifier.weight(0.6f).clickable { onFiles() },
+            )
         }
     }
 }
@@ -845,16 +862,14 @@ private fun GridAccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit,
                     Text(m.bigLabel, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
-            m.extras.firstOrNull()?.let { (label, value) ->
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(label, color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
-                    Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                }
-            }
+            Text(
+                acc.platform.label,
+                color = Color.White.copy(alpha = 0.75f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
@@ -930,7 +945,7 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Tap to view", color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp)
+                    Text(acc.platform.label, color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     Icon(Icons.Default.ViewList, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                 }
             }

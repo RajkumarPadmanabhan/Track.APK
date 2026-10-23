@@ -50,6 +50,23 @@ data class PdfPortfolio(
     val sections: List<PortfolioSection>,
     val skills: List<String>,
     val usedOcr: Boolean,
+    val uploadedFileId: String? = null,
+    val originalSize: Long = 0L,
+    val storedSize: Long = 0L,
+    val sha256: String? = null,
+)
+
+/** One PDF saved inside the app. The file on disk has a generated name, never the user's name. */
+data class UploadedFile(
+    val id: String,
+    val displayName: String,
+    val storedName: String,
+    val originalSize: Long,
+    val storedSize: Long,
+    val pageCount: Int,
+    val sha256: String,
+    val uploadedAt: Long,
+    val portfolioName: String?,
 )
 
 /** Public details read from a social profile (YouTube, Instagram, LinkedIn). */

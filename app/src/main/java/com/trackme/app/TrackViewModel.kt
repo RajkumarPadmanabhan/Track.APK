@@ -28,6 +28,8 @@ import com.trackme.app.data.mergeWith
 import com.trackme.app.data.nameFromEmail
 import com.trackme.app.data.newAccount
 import com.trackme.app.data.NewsDataRepository
+import com.trackme.app.data.UploadedFile
+import com.trackme.app.data.UploadedFileStore
 import com.trackme.app.data.PdfPortfolio
 import com.trackme.app.data.PdfReadException
 import com.trackme.app.data.PdfPortfolioReader
@@ -37,7 +39,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES, NEWS }
+enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES, NEWS, FILES }
 
 class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -61,6 +63,11 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var accounts by mutableStateOf(session?.let { Store.loadAccounts(prefs, it.email) } ?: emptyList())
         private set
+    var uploadedFiles by mutableStateOf(session?.let { UploadedFileStore.load(prefs, it.email) } ?: emptyList())
+        private set
+
+    val totalUploadedBytes: Long
+        get() = uploadedFiles.sumOf { it.originalSize }
     var screen by mutableStateOf(Screen.HOME)
     var showAdd by mutableStateOf(false)
     var detailId by mutableStateOf<String?>(null)
@@ -318,6 +325,22 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             try {
                 val portfolio = PdfPortfolioReader.read(context, uri)
+                val fileId = portfolio.uploadedFileId
+                if (fileId != null && portfolio.sha256 != null) {
+                    val record = UploadedFile(
+                        id = fileId,
+                        displayName = portfolio.fileName,
+                        storedName = "$fileId.pdf.gz",
+                        originalSize = portfolio.originalSize,
+                        storedSize = portfolio.storedSize,
+                        pageCount = portfolio.pageCount,
+                        sha256 = portfolio.sha256,
+                        uploadedAt = System.currentTimeMillis(),
+                        portfolioName = portfolio.name,
+                    )
+                    uploadedFiles = listOf(record) + uploadedFiles.filter { it.id != record.id }
+                    session?.let { UploadedFileStore.save(prefs, it.email, uploadedFiles) }
+                }
                 platform = Platform.PORTFOLIO
                 pdfPortfolio = portfolio
                 val handle = portfolio.name.lowercase()
@@ -361,6 +384,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         Store.saveUser(prefs, s)
         session = s
         accounts = Store.loadAccounts(prefs, e)
+        uploadedFiles = UploadedFileStore.load(prefs, e)
         screen = Screen.HOME
         refreshNote = null
         return true
@@ -376,6 +400,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         Store.saveUser(prefs, s)
         session = s
         accounts = Store.loadAccounts(prefs, e)
+        uploadedFiles = UploadedFileStore.load(prefs, e)
         screen = Screen.HOME
         refreshNote = null
         return true
@@ -385,6 +410,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         Store.saveUser(prefs, null)
         session = null
         accounts = emptyList()
+        uploadedFiles = emptyList()
         screen = Screen.HOME
         showAdd = false
         detailId = null
@@ -491,6 +517,66 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         persist()
         closeAdd()
         return true
+    }
+
+    fun deleteUploadedFile(context: Context, file: UploadedFile) {
+        UploadedFileStore.deleteStored(context.applicationContext, file)
+        uploadedFiles = uploadedFiles.filter { it.id != file.id }
+        session?.let { UploadedFileStore.save(prefs, it.email, uploadedFiles) }
+    }
+
+    /** Writes the exact original PDF to the place the user picked, then proves it by hash. */
+    fun downloadUploadedFile(context: Context, file: UploadedFile, dest: android.net.Uri, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val tmp = java.io.File(context.cacheDir, "download_${file.id}.pdf")
+                    val written = UploadedFileStore.writeOriginal(context.applicationContext, file, tmp)
+                    if (!written) {
+                        false
+                    } else {
+                        context.contentResolver.openOutputStream(dest)?.use { out ->
+                            tmp.inputStream().use { it.copyTo(out) }
+                        } != null
+                    }
+                }
+            } catch (_: Throwable) {
+                false
+            }
+            onDone(ok)
+        }
+    }
+
+    /** Opens the original PDF in the phone's PDF viewer. Nothing is executed by this app. */
+    fun previewUploadedFile(context: Context, file: UploadedFile, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val ok = try {
+                val previewFile = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val out = java.io.File(
+                        java.io.File(context.cacheDir, "pdf_preview").apply { mkdirs() },
+                        "${file.id}.pdf",
+                    )
+                    if (UploadedFileStore.writeOriginal(context.applicationContext, file, out)) out else null
+                } ?: return@launch onDone(false)
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    previewFile,
+                )
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/pdf")
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                context.startActivity(android.content.Intent.createChooser(intent, "Preview PDF").apply {
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+                true
+            } catch (_: Throwable) {
+                false
+            }
+            onDone(ok)
+        }
     }
 
     fun removeAccount(id: String) {
