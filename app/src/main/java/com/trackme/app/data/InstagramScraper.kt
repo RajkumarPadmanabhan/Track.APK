@@ -23,28 +23,50 @@ object InstagramScraper {
                 connectTimeout = 8000
                 readTimeout = 8000
             }
-            val html = connection.inputStream.bufferedReader().use { it.readText() }
-            // Extract pattern: "XX Followers, YY Following, ZZ Posts"
-            val pattern = Pattern.compile("content=\"([0-9.,KkMm]+)\\s+Followers,\\s+([0-9.,KkMm]+)\\s+Following,\\s+([0-9.,KkMm]+)\\s+Posts")
-            val matcher = pattern.matcher(html)
-            if (matcher.find()) {
-                val followers = matcher.group(1) ?: "0"
-                val following = matcher.group(2) ?: "0"
-                val posts = matcher.group(3) ?: "0"
-                InstagramProfileStats(
-                    username = username,
-                    profileUrl = targetUrl,
-                    followers = followers,
-                    following = following,
-                    posts = posts,
-                    lastUpdated = System.currentTimeMillis()
-                )
-            } else {
-                null
+            val html = connection.inputStream.bufferedReader().use { reader ->
+                val sb = StringBuilder()
+                val buf = CharArray(8192)
+                while (sb.length < 600_000) {
+                    val n = reader.read(buf)
+                    if (n < 0) break
+                    sb.append(buf, 0, n)
+                }
+                sb.toString()
             }
+            val counts = readCounts(html) ?: return@withContext null
+            InstagramProfileStats(
+                username = username,
+                profileUrl = targetUrl,
+                followers = counts.first,
+                following = counts.second,
+                lastUpdated = System.currentTimeMillis()
+            )
         } catch (e: Exception) {
             e.printStackTrace()
             null
+        } finally {
+            // connection may fail before it is assigned; close only when open
         }
+    }
+
+    /** Followers and following only. Posts, name, and photo are ignored. */
+    private fun readCounts(html: String): Pair<String, String>? {
+        val meta = Pattern.compile(
+            """([\d.,]+[KkMm]?)\s+Followers,\s+([\d.,]+[KkMm]?)\s+Following""",
+            Pattern.CASE_INSENSITIVE,
+        ).matcher(html)
+        if (meta.find()) {
+            val followers = meta.group(1) ?: return null
+            val following = meta.group(2) ?: return null
+            return followers to following
+        }
+        val followers = Pattern.compile(""""edge_followed_by"\s*:\s*\{\s*"count"\s*:\s*(\d+)""")
+            .matcher(html)
+        val following = Pattern.compile(""""edge_follow"\s*:\s*\{\s*"count"\s*:\s*(\d+)""")
+            .matcher(html)
+        if (followers.find() && following.find()) {
+            return followers.group(1) to following.group(1)
+        }
+        return null
     }
 }

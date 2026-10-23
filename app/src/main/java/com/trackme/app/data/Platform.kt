@@ -31,8 +31,8 @@ enum class Platform(
     ),
     INSTAGRAM(
         "Instagram", "https://instagram.com/username", false,
-        "Reads the public profile preview (name, photo, follower counts) for public accounts. " +
-            "Instagram sometimes blocks this; you then get the profile link card instead.",
+        "Reads follower and following counts only. " +
+            "Instagram sometimes hides them; you then get the profile link card instead.",
         Regex("""(?:https?://)?(?:www\.)?instagram\.com/([A-Za-z0-9._]+)""", RegexOption.IGNORE_CASE),
         Regex("^[A-Za-z0-9._]+$"),
         "https://www.instagram.com/",

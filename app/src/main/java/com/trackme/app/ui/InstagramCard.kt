@@ -55,12 +55,10 @@ fun InstagramStatsCard(
                 }
             }
             Spacer(modifier = Modifier.height(16.dp))
-            // Only Followers, Following, and Posts counts
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                CountColumn(label = "Posts", value = stats.posts)
                 CountColumn(label = "Followers", value = stats.followers)
                 CountColumn(label = "Following", value = stats.following)
             }

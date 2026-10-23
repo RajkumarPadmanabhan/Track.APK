@@ -64,7 +64,6 @@ data class InstagramProfileStats(
     val profileUrl: String,
     val followers: String = "0",
     val following: String = "0",
-    val posts: String = "0",
     val lastUpdated: Long = System.currentTimeMillis()
 )
 

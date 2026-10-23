@@ -162,8 +162,8 @@ fun TrackedAccount.mergeWith(f: TrackedAccount): TrackedAccount {
     for ((k, v) in f.activity) act[k] = maxOf(act[k] ?: 0, v)
     return copy(
         name = f.name.ifBlank { name },
-        avatarUrl = f.avatarUrl ?: avatarUrl,
-        subtitle = f.subtitle ?: subtitle,
+        avatarUrl = if (platform == Platform.INSTAGRAM) null else f.avatarUrl ?: avatarUrl,
+        subtitle = if (platform == Platform.INSTAGRAM) null else f.subtitle ?: subtitle,
         count = f.count ?: count,
         countLabel = if (f.count != null) f.countLabel else countLabel,
         extras = f.extras.ifEmpty { extras },

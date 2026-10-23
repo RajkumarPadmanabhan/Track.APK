@@ -111,6 +111,9 @@ object SocialApi {
 
     suspend fun fetchPreview(platform: Platform, profile: ParsedProfile): PublicProfile =
         withContext(Dispatchers.IO) {
+            if (platform == Platform.INSTAGRAM) {
+                return@withContext instagramCounts(profile)
+            }
             val html = getHtml(platform, profile.url)
             val og = parseOg(html)
             val titleTag = Regex("""<title[^>]*>(.*?)</title>""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)?.let {
@@ -124,7 +127,6 @@ object SocialApi {
                 )
             }
             when (platform) {
-                Platform.INSTAGRAM -> parseInstagram(profile, title, og)
                 Platform.LINKEDIN -> parseLinkedIn(profile, title, og)
                 Platform.FACEBOOK -> parseFacebook(profile, title, og)
                 Platform.PORTFOLIO -> parsePortfolio(profile, title, og)
@@ -146,36 +148,24 @@ object SocialApi {
         )
     }
 
-    private suspend fun parseInstagram(profile: ParsedProfile, title: String, og: Map<String, String>): PublicProfile {
-        val desc = og["description"].orEmpty()
-        val m = Regex(
-            """([\d.,]+[KMBkmb]?)\s+Followers,\s+([\d.,]+[KMBkmb]?)\s+Following,\s+([\d.,]+[KMBkmb]?)\s+Posts""",
-            RegexOption.IGNORE_CASE,
-        ).find(desc)
-        val stats = if (m != null) {
-            listOf(
-                "Followers" to m.groupValues[1],
-                "Following" to m.groupValues[2],
-                "Posts" to m.groupValues[3],
+    /** Instagram tags store follower and following counts. Name, photo, bio, and posts are not kept. */
+    private suspend fun instagramCounts(profile: ParsedProfile): PublicProfile {
+        val counts = InstagramScraper.fetchCountsOnly(profile.url)
+            ?: throw ApiException(
+                "Instagram didn't share follower and following counts for this profile. " +
+                    "Showing the profile link instead."
             )
-        } else {
-            val counts = runCatching { InstagramScraper.fetchCountsOnly(profile.url) }.getOrNull()
-            if (counts != null) {
-                listOf(
-                    "Followers" to counts.followers,
-                    "Following" to counts.following,
-                    "Posts" to counts.posts,
-                )
-            } else emptyList()
-        }
-        val name = title.substringBefore(" (@").substringBefore(" •").trim().ifBlank { profile.handle }
+        val handle = profile.handle.trimStart('@')
         return PublicProfile(
-            name = name,
-            handle = "@${profile.handle.trimStart('@')}",
-            subtitle = "Instagram Public Profile",
-            description = if (m == null && stats.isEmpty()) desc.take(300).ifBlank { null } else null,
-            imageUrl = og["image"],
-            stats = stats,
+            name = handle,
+            handle = "@$handle",
+            subtitle = null,
+            description = null,
+            imageUrl = null,
+            stats = listOf(
+                "Followers" to counts.followers,
+                "Following" to counts.following,
+            ),
         )
     }
 

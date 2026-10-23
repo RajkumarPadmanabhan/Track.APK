@@ -418,10 +418,10 @@ private fun cardModel(a: TrackedAccount): CardModel {
         delta < 0 -> "-${compactCount(-delta)}" to Tone.DOWN
         else -> "0" to Tone.FLAT
     }
-    val filteredExtras = if (a.platform == Platform.YOUTUBE) {
-        a.extras.filter { it.first == "Videos" }
-    } else {
-        a.extras.take(2)
+    val filteredExtras = when (a.platform) {
+        Platform.YOUTUBE -> a.extras.filter { it.first == "Videos" }
+        Platform.INSTAGRAM -> a.extras.filter { it.first == "Following" }
+        else -> a.extras.take(2)
     }
     return CardModel(
         big = a.count?.let { compactCount(it) } ?: "—",
