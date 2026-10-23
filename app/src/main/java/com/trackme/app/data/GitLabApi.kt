@@ -97,4 +97,55 @@ object GitLabApi {
         }
         map
     }
+
+    suspend fun fetchReleases(fullName: String): List<GhRelease> = withContext(Dispatchers.IO) {
+        try {
+            val encoded = URLEncoder.encode(fullName, "UTF-8")
+            val arr = JSONArray(Http.get("$BASE/projects/$encoded/releases?per_page=50"))
+            val list = mutableListOf<GhRelease>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val name = o.str("name") ?: o.optString("tag_name")
+                val tag = o.optString("tag_name")
+                val published = o.optString("released_at")
+                val body = o.str("description")
+                val links = o.optJSONObject("_links")
+                val webUrl = links?.optString("self") ?: "https://gitlab.com/$fullName/-/releases"
+                list += GhRelease(
+                    name = name,
+                    tagName = tag,
+                    publishedAt = published,
+                    body = body,
+                    htmlUrl = webUrl,
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun fetchCollaborators(fullName: String): List<GhCollaborator> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<GhCollaborator>()
+        try {
+            val encoded = URLEncoder.encode(fullName, "UTF-8")
+            val jsonStr = try {
+                Http.get("$BASE/projects/$encoded/members?per_page=50")
+            } catch (_: Exception) {
+                Http.get("$BASE/projects/$encoded/repository/contributors?per_page=50")
+            }
+            val arr = JSONArray(jsonStr)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val login = o.str("username") ?: o.str("name") ?: o.str("email") ?: "Contributor"
+                list += GhCollaborator(
+                    login = login,
+                    avatarUrl = o.str("avatar_url"),
+                    htmlUrl = o.optString("web_url", "https://gitlab.com/$fullName"),
+                    contributions = o.optInt("commits"),
+                )
+            }
+        } catch (_: Exception) { }
+        list
+    }
 }

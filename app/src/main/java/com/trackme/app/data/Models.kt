@@ -75,3 +75,19 @@ enum class SortMode(val label: String) {
     SIZE("Size"),
     NAME("Name A-Z"),
 }
+
+data class GhRelease(
+    val name: String,
+    val tagName: String,
+    val publishedAt: String,
+    val body: String?,
+    val htmlUrl: String,
+    val zipUrl: String? = null,
+)
+
+data class GhCollaborator(
+    val login: String,
+    val avatarUrl: String?,
+    val htmlUrl: String,
+    val contributions: Int = 0,
+)

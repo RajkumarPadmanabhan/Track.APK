@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -48,16 +49,20 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -544,26 +549,6 @@ private fun OverviewTab(vm: TrackViewModel, user: GhUser) {
             )
         }
 
-        Tile(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text("Activity", fontWeight = FontWeight.Bold)
-                if (vm.activity.isEmpty()) {
-                    Text(
-                        "No recent public activity found.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                } else {
-                    YearHeatmap(vm.activity)
-                    Text(
-                        "Last year · ${fmt(vm.activity.values.sum())} contributions",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
-        }
-
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             BigTile("Repos", fmt(repos.size), "Originals: ${fmt(originals)}", Modifier.weight(1f))
             BigTile("Stars", fmt(totalStars), top?.takeIf { it.stars > 0 }?.let { "Top: ${it.name}" }, Modifier.weight(1f))
@@ -715,14 +700,26 @@ private fun ReposTab(vm: TrackViewModel) {
                 }
             }
         }
-        items(list.distinctBy { it.fullName }, key = { it.fullName }) { repo -> RepoCard(repo, ctx) }
+        items(list.distinctBy { it.fullName }, key = { it.fullName }) { repo -> RepoCard(repo, vm, ctx) }
     }
 }
 
 @Composable
-private fun RepoCard(repo: GhRepo, ctx: Context) {
+private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
+    var showReleasesDialog by remember { mutableStateOf(false) }
+    var showCollaboratorsDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(repo.fullName) {
+        vm.loadReleasesForRepo(repo.fullName)
+    }
+
+    val releases = vm.releasesMap[repo.fullName]
+    val isReleasesLoading = vm.loadingReleasesForRepo == repo.fullName
+    val collaborators = vm.collaboratorsMap[repo.fullName]
+    val isCollaboratorsLoading = vm.loadingCollaboratorsForRepo == repo.fullName
+
     Tile(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     repo.name,
@@ -761,6 +758,228 @@ private fun RepoCard(repo: GhRepo, ctx: Context) {
                     Text("Share")
                 }
             }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (releases == null || releases.isNotEmpty()) {
+                    OutlinedButton(onClick = {
+                        vm.loadReleasesForRepo(repo.fullName)
+                        showReleasesDialog = true
+                    }) {
+                        Icon(Icons.Default.LocalOffer, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("View releases")
+                    }
+                }
+                OutlinedButton(onClick = {
+                    vm.loadCollaboratorsForRepo(repo.fullName)
+                    showCollaboratorsDialog = true
+                }) {
+                    Icon(Icons.Default.Group, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Collaborator")
+                }
+            }
         }
     }
+
+    if (showReleasesDialog) {
+        ReleasesDialog(
+            repo = repo,
+            releases = releases,
+            isLoading = isReleasesLoading,
+            onDismiss = { showReleasesDialog = false }
+        )
+    }
+
+    if (showCollaboratorsDialog) {
+        CollaboratorsDialog(
+            repo = repo,
+            collaborators = collaborators,
+            isLoading = isCollaboratorsLoading,
+            onDismiss = { showCollaboratorsDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun ReleasesDialog(
+    repo: GhRepo,
+    releases: List<com.trackme.app.data.GhRelease>?,
+    isLoading: Boolean,
+    onDismiss: () -> Unit
+) {
+    val ctx = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("${repo.name} Releases", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Repository versions & releases", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 380.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (isLoading) {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (releases.isNullOrEmpty()) {
+                    Text(
+                        "No releases found for this repository.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                } else {
+                    releases.forEach { rel ->
+                        Tile(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        rel.name.ifBlank { rel.tagName },
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Box(
+                                        Modifier
+                                            .clip(RoundedCornerShape(50))
+                                            .background(Brand.Coral.copy(alpha = 0.2f))
+                                            .padding(horizontal = 10.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(
+                                            rel.tagName,
+                                            color = Brand.Coral,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.sp
+                                        )
+                                    }
+                                }
+                                if (rel.publishedAt.isNotBlank()) {
+                                    Text(
+                                        "Released ${date(rel.publishedAt)}",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                rel.body?.takeIf { it.isNotBlank() }?.let { body ->
+                                    Text(
+                                        body,
+                                        fontSize = 12.sp,
+                                        maxLines = 4,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                if (rel.htmlUrl.isNotBlank()) {
+                                    TextButton(onClick = { openUrl(ctx, rel.htmlUrl) }) {
+                                        Icon(Icons.Default.OpenInNew, null, Modifier.size(16.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("View release on web", fontSize = 12.sp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+@Composable
+private fun CollaboratorsDialog(
+    repo: GhRepo,
+    collaborators: List<com.trackme.app.data.GhCollaborator>?,
+    isLoading: Boolean,
+    onDismiss: () -> Unit
+) {
+    val ctx = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("${repo.name} Collaborators", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Contributors & team members", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 380.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (isLoading) {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (collaborators.isNullOrEmpty()) {
+                    Text(
+                        "No collaborators or public contributors found.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                } else {
+                    collaborators.forEach { collab ->
+                        Tile(
+                            Modifier
+                                .fillMaxWidth()
+                                .clickable { openUrl(ctx, collab.htmlUrl) }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                RemoteAvatar(collab.avatarUrl, size = 42)
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "@" + collab.login,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp
+                                    )
+                                    if (collab.contributions > 0) {
+                                        Text(
+                                            "${collab.contributions} contribution${if (collab.contributions == 1) "" else "s"}",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                                Icon(
+                                    Icons.Default.OpenInNew,
+                                    contentDescription = "Open profile",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
 }

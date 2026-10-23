@@ -406,7 +406,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                                 fontSize = 16.sp
                             )
                             Text(
-                                "TrackMe v1.0.0 · Details & info",
+                                "TrackMe v${vm.currentAppVersion} · Details & info",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -421,6 +421,75 @@ fun ProfileScreen(vm: TrackViewModel) {
                         )
                     ) {
                         Text("View Details", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // App Updates Card
+        item {
+            Tile(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { vm.checkAppUpdate() }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "Check for Updates",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                "App Update",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                "Current version: v${vm.currentAppVersion}",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = { vm.checkAppUpdate() },
+                        enabled = !vm.isCheckingAppUpdate,
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = Color.Black
+                        )
+                    ) {
+                        if (vm.isCheckingAppUpdate) {
+                            androidx.compose.material3.CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                strokeWidth = 2.dp,
+                                color = Color.Black
+                            )
+                        } else {
+                            Text("Update", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
@@ -704,6 +773,50 @@ fun ProfileScreen(vm: TrackViewModel) {
             confirmButton = {
                 TextButton(onClick = { showComingSoonDialog = false }) {
                     Text("OK", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    vm.appUpdateMessage?.let { msg ->
+        AlertDialog(
+            onDismissRequest = { vm.appUpdateMessage = null },
+            icon = {
+                Icon(
+                    Icons.Default.Refresh,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            },
+            title = { Text("App Update Status", fontWeight = FontWeight.Bold) },
+            text = {
+                Text(
+                    msg,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                if (vm.appUpdateDownloadUrl != null) {
+                    Button(onClick = {
+                        val url = vm.appUpdateDownloadUrl!!
+                        vm.appUpdateMessage = null
+                        runCatching { uriHandler.openUri(url) }
+                    }) {
+                        Text("Download Update", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    TextButton(onClick = { vm.appUpdateMessage = null }) {
+                        Text("OK", fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                if (vm.appUpdateDownloadUrl != null) {
+                    TextButton(onClick = { vm.appUpdateMessage = null }) {
+                        Text("Cancel")
+                    }
                 }
             }
         )

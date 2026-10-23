@@ -106,4 +106,47 @@ object GitHubApi {
         }
         map
     }
+
+    suspend fun fetchReleases(fullName: String): List<GhRelease> = withContext(Dispatchers.IO) {
+        try {
+            val arr = JSONArray(Http.get("https://api.github.com/repos/$fullName/releases?per_page=50"))
+            val list = mutableListOf<GhRelease>()
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                list += GhRelease(
+                    name = o.str("name") ?: o.optString("tag_name"),
+                    tagName = o.optString("tag_name"),
+                    publishedAt = o.optString("published_at").ifBlank { o.optString("created_at") },
+                    body = o.str("body"),
+                    htmlUrl = o.optString("html_url"),
+                    zipUrl = o.str("zipball_url"),
+                )
+            }
+            list
+        } catch (_: Exception) {
+            emptyList()
+        }
+    }
+
+    suspend fun fetchCollaborators(fullName: String): List<GhCollaborator> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<GhCollaborator>()
+        try {
+            val jsonStr = try {
+                Http.get("https://api.github.com/repos/$fullName/contributors?per_page=50")
+            } catch (_: Exception) {
+                Http.get("https://api.github.com/repos/$fullName/collaborators?per_page=50")
+            }
+            val arr = JSONArray(jsonStr)
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                list += GhCollaborator(
+                    login = o.optString("login"),
+                    avatarUrl = o.str("avatar_url"),
+                    htmlUrl = o.optString("html_url"),
+                    contributions = o.optInt("contributions"),
+                )
+            }
+        } catch (_: Exception) { }
+        list
+    }
 }

@@ -108,6 +108,106 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     var language by mutableStateOf<String?>(null)
     var query by mutableStateOf("")
 
+    // Repo releases & collaborators state
+    var releasesMap by mutableStateOf<Map<String, List<com.trackme.app.data.GhRelease>>>(emptyMap())
+        private set
+    var collaboratorsMap by mutableStateOf<Map<String, List<com.trackme.app.data.GhCollaborator>>>(emptyMap())
+        private set
+    var loadingReleasesForRepo by mutableStateOf<String?>(null)
+        private set
+    var loadingCollaboratorsForRepo by mutableStateOf<String?>(null)
+        private set
+
+    // App Update State
+    var currentAppVersion by mutableStateOf("1.2.0")
+        private set
+    var isCheckingAppUpdate by mutableStateOf(false)
+        private set
+    var appUpdateMessage by mutableStateOf<String?>(null)
+    var appUpdateDownloadUrl by mutableStateOf<String?>(null)
+
+    fun checkAppUpdate() {
+        if (isCheckingAppUpdate) return
+        isCheckingAppUpdate = true
+        appUpdateMessage = null
+        appUpdateDownloadUrl = null
+        viewModelScope.launch {
+            try {
+                val jsonStr = try {
+                    com.trackme.app.data.Http.get("https://api.github.com/repos/RajkumarPadmanabhan/Track.APK/releases/latest")
+                } catch (_: Exception) {
+                    com.trackme.app.data.Http.get("https://api.github.com/repos/rrajkumarpadmanabhan/Trackme-v2/releases/latest")
+                }
+                val o = org.json.JSONObject(jsonStr)
+                val tagName = o.optString("tag_name").ifBlank { o.optString("name") }
+                val downloadUrl = o.optString("html_url")
+                val cleanTag = tagName.trimStart('v', 'V').trim()
+
+                if (cleanTag.isNotBlank() && cleanTag != currentAppVersion && isNewerVersion(cleanTag, currentAppVersion)) {
+                    currentAppVersion = cleanTag
+                    appUpdateMessage = "New update available: Version $cleanTag!"
+                    appUpdateDownloadUrl = downloadUrl.ifBlank { "https://github.com/RajkumarPadmanabhan/Track.APK/releases" }
+                } else {
+                    appUpdateMessage = "No new updates available. You are using the latest version (v$currentAppVersion)."
+                }
+            } catch (e: Exception) {
+                appUpdateMessage = "No new updates available. You are on the latest version (v$currentAppVersion)."
+            } finally {
+                isCheckingAppUpdate = false
+            }
+        }
+    }
+
+    private fun isNewerVersion(remote: String, current: String): Boolean {
+        return try {
+            val rParts = remote.split(".").map { it.toIntOrNull() ?: 0 }
+            val cParts = current.split(".").map { it.toIntOrNull() ?: 0 }
+            for (i in 0 until maxOf(rParts.size, cParts.size)) {
+                val r = rParts.getOrElse(i) { 0 }
+                val c = cParts.getOrElse(i) { 0 }
+                if (r > c) return true
+                if (r < c) return false
+            }
+            false
+        } catch (_: Exception) {
+            remote != current
+        }
+    }
+
+    fun loadReleasesForRepo(fullName: String) {
+        if (releasesMap.containsKey(fullName) || loadingReleasesForRepo == fullName) return
+        loadingReleasesForRepo = fullName
+        viewModelScope.launch {
+            try {
+                val list = if (platform == Platform.GITLAB) {
+                    GitLabApi.fetchReleases(fullName)
+                } else {
+                    GitHubApi.fetchReleases(fullName)
+                }
+                releasesMap = releasesMap + (fullName to list)
+            } finally {
+                if (loadingReleasesForRepo == fullName) loadingReleasesForRepo = null
+            }
+        }
+    }
+
+    fun loadCollaboratorsForRepo(fullName: String) {
+        if (collaboratorsMap.containsKey(fullName) || loadingCollaboratorsForRepo == fullName) return
+        loadingCollaboratorsForRepo = fullName
+        viewModelScope.launch {
+            try {
+                val list = if (platform == Platform.GITLAB) {
+                    GitLabApi.fetchCollaborators(fullName)
+                } else {
+                    GitHubApi.fetchCollaborators(fullName)
+                }
+                collaboratorsMap = collaboratorsMap + (fullName to list)
+            } finally {
+                if (loadingCollaboratorsForRepo == fullName) loadingCollaboratorsForRepo = null
+            }
+        }
+    }
+
     fun updateYoutubeKey(key: String) {
         youtubeKey = key
         prefs.edit().putString("yt_key", key.trim()).apply()
@@ -235,6 +335,10 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             accounts + draft
         }
         accounts = accounts.distinctBy { it.id }
+        if (draft.platform.fullScan) {
+            gitSkipDay = ""
+            prefs.edit().putString("git_skip", "").apply()
+        }
         persist()
         closeAdd()
         return true
@@ -391,6 +495,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         user = u
         repos = r
         activity = a
+        gitSkipDay = ""
+        prefs.edit().putString("git_skip", "").apply()
         language = null
         query = ""
     }

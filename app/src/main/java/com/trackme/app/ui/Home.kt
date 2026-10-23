@@ -130,23 +130,9 @@ fun HomeScreen(vm: TrackViewModel) {
 
         item { HeroTile(todayEvents, gained, accounts.size, hasGit, combined) }
 
-        if (todayEvents > 0) {
-            // Git activity today: show the activity card (can be skipped) instead of streak tiles.
+        if (hasGit || combined.isNotEmpty()) {
             if (vm.gitSkipDay != Days.key()) {
                 item { HeatmapTile(combined, onSkip = { vm.skipGitToday() }) }
-            }
-        } else {
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    StatTile(
-                        Icons.Default.LocalFireDepartment, "Streak", streak.current.toString(),
-                        "Longest: ${streak.longest}", Modifier.weight(1f),
-                    )
-                    StatTile(
-                        Icons.Default.CheckCircle, "Active days", streak.activeDays.toString(),
-                        streak.since?.let { "Since ${Days.pretty(it)}" } ?: "No activity yet", Modifier.weight(1f),
-                    )
-                }
             }
         }
 
