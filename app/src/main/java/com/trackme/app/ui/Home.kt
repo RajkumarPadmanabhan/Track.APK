@@ -395,6 +395,36 @@ private fun HeroTile(
         )
     }
     val currentBg = bgColors[bgIndex % bgColors.size]
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumeKey by remember { mutableStateOf(0) }
+    var screenLabel by remember { mutableStateOf<String?>(null) }
+    var usageAllowed by remember { mutableStateOf(false) }
+    var usageChecked by remember { mutableStateOf(false) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeKey += 1
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(resumeKey) {
+        while (isActive) {
+            val (allowed, label) = withContext(Dispatchers.IO) {
+                val access = ScreenTime.hasAccess(context)
+                val text = if (access) {
+                    ScreenTime.todayMillis(context)?.let { ScreenTime.format(it) }?.takeIf { it.isNotBlank() }
+                } else {
+                    null
+                }
+                access to text
+            }
+            usageAllowed = allowed
+            screenLabel = label
+            usageChecked = true
+            delay(30_000)
+        }
+    }
     val ink = Brand.Ink
     val bars = remember(combined) {
         val raw = (35 downTo 0).map { (combined[Days.key(-it)] ?: 0).toFloat() }
@@ -423,6 +453,17 @@ private fun HeroTile(
                 )
             }
             HeroSmall(tags.toString(), "Tags", Modifier.weight(0.4f))
+            HeroSmall(
+                value = screenLabel ?: if (!usageChecked || usageAllowed) "" else "Allow",
+                label = "Time",
+                modifier = Modifier.weight(0.5f).then(
+                    if (usageAllowed) Modifier else Modifier.clickable {
+                        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { context.startActivity(intent) }
+                    }
+                ),
+            )
         }
     }
 }
