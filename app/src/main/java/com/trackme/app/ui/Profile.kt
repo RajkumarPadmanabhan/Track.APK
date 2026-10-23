@@ -10,6 +10,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -114,6 +116,10 @@ fun ProfileScreen(vm: TrackViewModel) {
     var confirmSignOut by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showCode by remember { mutableStateOf(false) }
+    var promoCode by remember { mutableStateOf("") }
+    var promoError by remember { mutableStateOf(false) }
+    var showBadges by remember { mutableStateOf(false) }
     val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportBackup(context, uri)
     }
@@ -138,14 +144,19 @@ fun ProfileScreen(vm: TrackViewModel) {
             ) {
                 Row(verticalAlignment = Alignment.Top) {
                     Column(Modifier.weight(1f)) {
-                        Text(
-                            session.name,
-                            fontSize = 36.sp,
-                            lineHeight = 40.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                session.name,
+                                fontSize = 36.sp,
+                                lineHeight = 40.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false),
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            VerifyTick(vm.verified, onClick = { showCode = true })
+                        }
                         Spacer(Modifier.height(4.dp))
                         Text(
                             session.email,
@@ -158,10 +169,30 @@ fun ProfileScreen(vm: TrackViewModel) {
                     Spacer(Modifier.width(12.dp))
                     UserAvatar(session.name, session.avatarUrl, 64.dp)
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     ProfileStat(vm.accounts.size.toString(), "Tags")
                     ProfileStat(streak.current.toString(), "Day streak")
                     ProfileStat(streak.activeDays.toString(), "Active days")
+                    val pinned = vm.pinnedBadgeIds.mapNotNull { id -> vm.earnedBadges.firstOrNull { it.id == id } }
+                    if (pinned.isNotEmpty()) {
+                        Row(
+                            Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            pinned.forEach { badge ->
+                                BadgeMark(
+                                    badge.id,
+                                    28.dp,
+                                    modifier = Modifier.clickable { showBadges = true },
+                                )
+                            }
+                        }
+                    }
                 }
                 Button(
                     onClick = { editProfile = true },
@@ -756,7 +787,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                     Spacer(Modifier.height(2.dp))
                     Text("Supported Platforms", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                     Text(
-                        "GitHub, GitLab, Instagram, LinkedIn, YouTube, Facebook Page, X, and Personal Portfolio Websites.",
+                        "GitHub, GitLab, Instagram, LinkedIn, YouTube, Facebook Page, X, and any other website.",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -822,6 +853,48 @@ fun ProfileScreen(vm: TrackViewModel) {
                     }
                 }
             }
+        )
+    }
+    if (showCode && !vm.verified) {
+        AlertDialog(
+            onDismissRequest = { showCode = false },
+            title = { Text("Verification", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Enter a promo code.", fontSize = 14.sp)
+                    OutlinedTextField(
+                        value = promoCode,
+                        onValueChange = {
+                            promoCode = it
+                            promoError = false
+                        },
+                        singleLine = true,
+                        label = { Text("Promo code") },
+                    )
+                    if (promoError) {
+                        Text("That code does not match.", color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (vm.redeemCode(promoCode)) showCode = false else promoError = true
+                }) { Text("Apply") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCode = false }) { Text("Cancel") }
+            },
+        )
+    }
+    if (showBadges) {
+        val activity = combinedActivity(vm.accounts).values.sum().toLong() +
+            vm.accounts.filter { !it.isHidden }.sumOf { it.count ?: 0L }
+        AchievementsDialog(
+            earned = vm.earnedBadges,
+            pinned = vm.pinnedBadgeIds,
+            activity = activity,
+            onTogglePin = { vm.togglePinnedBadge(it) },
+            onDismiss = { showBadges = false },
         )
     }
 }

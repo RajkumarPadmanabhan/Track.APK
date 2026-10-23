@@ -252,41 +252,107 @@ fun WaveformBars(
     }
 }
 
-/** A smooth line of follower or subscriber totals. A steady count sits high, not as a dashed stub. */
+enum class GraphKind { CURVE, WAVE, BARS, STEPS, DOTS, SPIKE }
+
+/** Each platform draws a different chart. A flat saved count still gets that shape, not a solid block. */
+fun graphKind(platform: Platform): GraphKind = when (platform) {
+    Platform.YOUTUBE -> GraphKind.CURVE
+    Platform.INSTAGRAM -> GraphKind.WAVE
+    Platform.LINKEDIN -> GraphKind.STEPS
+    Platform.FACEBOOK -> GraphKind.DOTS
+    Platform.X -> GraphKind.SPIKE
+    Platform.GITHUB -> GraphKind.SPIKE
+    Platform.GITLAB -> GraphKind.BARS
+    else -> GraphKind.CURVE
+}
+
+private fun graphSeries(values: List<Float>, kind: GraphKind): List<Float> {
+    val usable = values.filter { it > 0f }
+    if (usable.size >= 2 && usable.max() > usable.min()) return values
+    return when (kind) {
+        GraphKind.CURVE -> listOf(0.08f, 0.14f, 0.22f, 0.34f, 0.48f, 0.62f, 0.74f, 0.84f, 0.9f, 0.94f, 0.97f, 0.99f, 1f)
+        GraphKind.WAVE -> listOf(0.32f, 0.58f, 0.9f, 0.68f, 0.36f, 0.52f, 0.86f, 0.7f, 0.4f, 0.64f, 0.96f, 0.74f, 0.46f, 0.82f)
+        GraphKind.STEPS -> listOf(0.16f, 0.16f, 0.34f, 0.34f, 0.34f, 0.54f, 0.54f, 0.72f, 0.72f, 0.72f, 0.9f, 0.9f, 1f, 1f)
+        GraphKind.DOTS -> listOf(0.22f, 0.28f, 0.4f, 0.55f, 0.72f, 0.88f, 0.78f, 0.62f, 0.7f, 0.84f, 0.94f, 0.86f, 0.96f, 1f)
+        GraphKind.SPIKE -> listOf(0.12f, 0.2f, 0.86f, 0.18f, 0.16f, 0.52f, 1f, 0.22f, 0.14f, 0.64f, 0.28f, 0.92f, 0.26f, 0.48f)
+        GraphKind.BARS -> listOf(0.2f, 0.35f, 0.55f, 0.28f, 0.7f, 0.42f, 0.9f, 0.38f, 0.62f, 1f, 0.48f, 0.76f, 0.33f, 0.58f)
+    }
+}
+
 @Composable
-fun CountChart(values: List<Float>, modifier: Modifier, color: Color) {
+fun CountChart(values: List<Float>, modifier: Modifier, color: Color, kind: GraphKind = GraphKind.CURVE) {
     Canvas(modifier) {
-        if (values.size < 2 || values.all { it <= 0f }) return@Canvas
-        val min = values.min()
-        val max = values.max()
-        val points = values.mapIndexed { i, v ->
-            val x = i * size.width / (values.lastIndex).coerceAtLeast(1)
-            val t = if (max == min) 0.86f else ((v - min) / (max - min)).coerceIn(0f, 1f)
-            val y = size.height * (1f - (0.10f + 0.78f * t))
-            Offset(x, y)
+        val series = graphSeries(values, kind)
+        if (series.size < 2) return@Canvas
+        val min = series.min()
+        val max = series.max()
+        val points = series.mapIndexed { i, v ->
+            val x = i * size.width / series.lastIndex
+            val t = if (max == min) 0.72f else ((v - min) / (max - min)).coerceIn(0f, 1f)
+            Offset(x, size.height * (1f - (0.08f + 0.84f * t)))
         }
-        val line = Path().apply {
-            moveTo(points.first().x, points.first().y)
-            for (i in 1 until points.size) {
-                val prev = points[i - 1]
-                val cur = points[i]
-                val cx = (prev.x + cur.x) / 2f
-                quadraticBezierTo(cx, prev.y, cx, (prev.y + cur.y) / 2f)
-                quadraticBezierTo(cx, cur.y, cur.x, cur.y)
+        val stroke = Stroke(width = 2.6.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)
+        when (kind) {
+            GraphKind.BARS -> {
+                val gap = 3.dp.toPx()
+                val bw = ((size.width - gap * (series.lastIndex)) / series.size).coerceAtLeast(2f)
+                points.forEach { p ->
+                    val top = p.y
+                    drawRoundRect(
+                        color = color.copy(alpha = 0.9f),
+                        topLeft = Offset(p.x, top),
+                        size = Size(bw, (size.height - top).coerceAtLeast(2f)),
+                        cornerRadius = CornerRadius(bw / 2f, bw / 2f),
+                    )
+                }
+            }
+            GraphKind.STEPS -> {
+                val path = Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    for (i in 1 until points.size) {
+                        lineTo(points[i].x, points[i - 1].y)
+                        lineTo(points[i].x, points[i].y)
+                    }
+                }
+                drawPath(path, color, style = stroke)
+            }
+            GraphKind.SPIKE -> {
+                val path = Path().apply {
+                    moveTo(points.first().x, points.first().y)
+                    for (i in 1 until points.size) lineTo(points[i].x, points[i].y)
+                }
+                drawPath(path, color, style = stroke)
+            }
+            GraphKind.DOTS -> {
+                val path = smoothGraph(points)
+                drawPath(path, color.copy(alpha = 0.85f), style = stroke)
+                points.forEach { p ->
+                    drawCircle(color, radius = 2.4.dp.toPx(), center = p)
+                }
+            }
+            GraphKind.CURVE, GraphKind.WAVE -> {
+                val path = smoothGraph(points)
+                val fill = Path().apply {
+                    addPath(path)
+                    lineTo(points.last().x, size.height)
+                    lineTo(points.first().x, size.height)
+                    close()
+                }
+                drawPath(fill, color.copy(alpha = 0.18f))
+                drawPath(path, color, style = stroke)
             }
         }
-        val fill = Path().apply {
-            addPath(line)
-            lineTo(points.last().x, size.height)
-            lineTo(points.first().x, size.height)
-            close()
-        }
-        drawPath(fill, color.copy(alpha = 0.16f))
-        drawPath(
-            line,
-            color,
-            style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
-        )
+    }
+}
+
+private fun smoothGraph(points: List<Offset>): Path = Path().apply {
+    moveTo(points.first().x, points.first().y)
+    for (i in 1 until points.size) {
+        val prev = points[i - 1]
+        val cur = points[i]
+        val cx = (prev.x + cur.x) / 2f
+        quadraticBezierTo(cx, prev.y, cx, (prev.y + cur.y) / 2f)
+        quadraticBezierTo(cx, cur.y, cur.x, cur.y)
     }
 }
 
@@ -403,6 +469,8 @@ fun AccountAvatar(acc: com.trackme.app.data.TrackedAccount, size: Dp = 44.dp) {
                     fontSize = (size.value * 0.16f).sp
                 )
             }
+        } else if (acc.platform == com.trackme.app.data.Platform.PORTFOLIO) {
+            AppLogo(appLogoKind(acc.url, acc.platform), size)
         } else {
             PlatformBadge(acc.platform, size)
         }

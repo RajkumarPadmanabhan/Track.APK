@@ -37,9 +37,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.data.NewsTopics
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -51,8 +53,15 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
         newsFeed.distinctBy { it.sourceUrl.ifBlank { it.id }.ifBlank { it.title } }
     }
 
-    LaunchedEffect(Unit) {
-        vm.loadLiveNews()
+    val topicKey = vm.newsTopicIds.joinToString(",")
+    var topicsOpen by remember { mutableStateOf(vm.newsTopicIds.size < NewsTopics.MAX) }
+    LaunchedEffect(topicKey) {
+        if (vm.newsTopicIds.size >= NewsTopics.MAX) topicsOpen = false
+        vm.loadLiveNews(keepCurrent = false)
+        while (true) {
+            delay(1000)
+            vm.loadLiveNews(keepCurrent = true)
+        }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -82,28 +91,51 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
                 modifier = Modifier.size(22.dp).clickable { isGridView = true },
             )
         }
-        Text(
-            "Choose up to 5. Tap again to remove one, then pick another.",
-            color = Color.Gray,
-            fontSize = 12.sp,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        )
-        FlowRow(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val picked = vm.newsTopicIds
-            NewsTopics.all.forEach { topic ->
-                val on = topic.id in picked
-                FilterChip(
-                    selected = on,
-                    onClick = { vm.toggleNewsTopic(topic.id) },
-                    enabled = on || picked.size < NewsTopics.MAX,
-                    label = { Text(topic.label) },
+        val picked = vm.newsTopicIds
+        if (!topicsOpen && picked.isNotEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    picked.mapNotNull { id -> NewsTopics.all.firstOrNull { it.id == id }?.label }.joinToString(" · "),
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    "Edit",
+                    color = Brand.Coral,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { topicsOpen = true },
                 )
             }
+        } else {
+            Text(
+                "Choose up to 5. Tap again to remove one, then pick another.",
+                color = Color.Gray,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                NewsTopics.all.forEach { topic ->
+                    val on = topic.id in picked
+                    FilterChip(
+                        selected = on,
+                        onClick = { vm.toggleNewsTopic(topic.id) },
+                        enabled = on || picked.size < NewsTopics.MAX,
+                        label = { Text(topic.label) },
+                    )
+                }
+            }
         }
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (vm.newsTopicIds.isEmpty()) {
             Column(

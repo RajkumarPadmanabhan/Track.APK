@@ -1,9 +1,7 @@
 package com.trackme.app.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,10 +10,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -27,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.trackme.app.data.NewsDataRepository
 import com.trackme.app.data.UserNewsPost
 
 @Composable
@@ -43,29 +40,13 @@ fun NewsPostCard(post: UserNewsPost) {
             }
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            // Header: Category Pill & Source Name
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(8.dp),
-                    color = getTagColor(post.categoryTag)
-                ) {
-                    Text(
-                        text = post.categoryTag,
-                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                        color = Color.Black,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-                Text(
-                    text = "${post.sourceName} • ${post.publishedAt}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.Gray
-                )
-            }
+            Text(
+                text = "${post.sourceName} · ${NewsDataRepository.shortNewsDate(post.publishedAt)}",
+                style = MaterialTheme.typography.labelSmall,
+                color = Color.Gray,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(modifier = Modifier.height(12.dp))
             // Thumbnail Image (if provided)
             if (!post.imageUrl.isNullOrBlank()) {
@@ -86,7 +67,7 @@ fun NewsPostCard(post: UserNewsPost) {
             }
             // Headline
             Text(
-                text = post.title,
+                text = NewsDataRepository.cleanPost(post).title,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
@@ -97,10 +78,11 @@ fun NewsPostCard(post: UserNewsPost) {
                 overflow = TextOverflow.Ellipsis
             )
             // Short Description
-            if (post.description.isNotBlank()) {
+            val description = NewsDataRepository.cleanPost(post).description
+            if (description.isNotBlank()) {
                 Spacer(modifier = Modifier.height(6.dp))
                 Text(
-                    text = post.description,
+                    text = description,
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.LightGray,
                     maxLines = 2,
@@ -111,12 +93,3 @@ fun NewsPostCard(post: UserNewsPost) {
     }
 }
 
-private fun getTagColor(tag: String): Color {
-    return when (tag) {
-        "YouTube" -> Color(0xFFFFCDD2)   // Soft Red
-        "Instagram" -> Color(0xFFFFE0B2) // Warm Orange
-        "LinkedIn" -> Color(0xFFBBDEFB)  // Light Blue
-        "Dev" -> Color(0xFFC8E6C9)       // Mint Green
-        else -> Color(0xFFE0E0E0)
-    }
-}

@@ -141,7 +141,17 @@ fun AddTagSheet(vm: TrackViewModel) {
                     FilterChip(
                         selected = p == option,
                         onClick = { vm.selectPlatform(option) },
-                        label = { Text(option.label) },
+                        label = {
+                            if (option == Platform.PORTFOLIO && p == option && vm.input.isNotBlank()) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    AppLogo(appLogoKind(vm.input, option), 18.dp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Other")
+                                }
+                            } else {
+                                Text(option.label)
+                            }
+                        },
                         colors = FilterChipDefaults.filterChipColors(
                             selectedContainerColor = option.cardColor,
                             selectedLabelColor = Color.Black,
@@ -153,15 +163,19 @@ fun AddTagSheet(vm: TrackViewModel) {
             OutlinedTextField(
                 value = vm.input,
                 onValueChange = {
-                    if (p == Platform.YOUTUBE) vm.onYoutubeInput(it) else {
-                        vm.input = it
-                        vm.suggestAppName(it)
+                    when (p) {
+                        Platform.YOUTUBE -> vm.onYoutubeInput(it)
+                        Platform.PORTFOLIO -> vm.onOtherInput(it)
+                        else -> {
+                            vm.input = it
+                            vm.suggestAppName(it)
+                        }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 shape = RoundedCornerShape(20.dp),
-                label = { Text("${p.label} profile link") },
+                label = { Text(if (p == Platform.PORTFOLIO) "Website link" else "${p.label} profile link") },
                 placeholder = { Text(p.example) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
                 keyboardActions = KeyboardActions(onGo = { vm.scan() }),
@@ -366,7 +380,13 @@ private fun DraftCard(d: TrackedAccount) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             val img = d.avatarUrl
-            if (!img.isNullOrBlank()) RemoteAvatar(img, 48) else PlatformBadge(d.platform, 48.dp)
+            if (d.platform == Platform.PORTFOLIO) {
+                AppLogo(appLogoKind(d.url, d.platform), 48.dp)
+            } else if (!img.isNullOrBlank()) {
+                RemoteAvatar(img, 48)
+            } else {
+                PlatformBadge(d.platform, 48.dp)
+            }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(

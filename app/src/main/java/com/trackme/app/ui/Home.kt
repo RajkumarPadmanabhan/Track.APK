@@ -109,11 +109,12 @@ import java.util.Date
 import java.util.Locale
 
 private fun greetingWithSymbol(): Pair<String, String> {
-    val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+    val cal = Calendar.getInstance()
+    val minutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
     return when {
-        h in 5..11 -> "Good morning" to "☀️"
-        h in 12..16 -> "Good afternoon" to "🌤️"
-        h in 17..21 -> "Good evening" to "🌇"
+        minutes in 5 * 60 until 12 * 60 -> "Good morning" to "☀️"
+        minutes in 12 * 60 until 17 * 60 -> "Good afternoon" to "🌤️"
+        minutes in 17 * 60 until 20 * 60 + 30 -> "Good evening" to "🌇"
         else -> "Good night" to "🌙"
     }
 }
@@ -191,6 +192,7 @@ fun HomeScreen(vm: TrackViewModel) {
 
     var isRaining by remember { mutableStateOf(false) }
     var isGridView by remember { mutableStateOf(false) }
+    var showBadges by remember { mutableStateOf(false) }
     var appSearch by remember { mutableStateOf(false) }
     var appQuery by remember { mutableStateOf("") }
     var appToDelete by remember { mutableStateOf<TrackedAccount?>(null) }
@@ -251,6 +253,8 @@ fun HomeScreen(vm: TrackViewModel) {
                     tags = platformAccounts.size,
                     combined = combined,
                     filesSize = com.trackme.app.data.formatBytes(vm.totalUploadedBytes),
+                    badgeCount = vm.earnedBadges.size,
+                    onBadges = { showBadges = true },
                 )
             }
 
@@ -423,6 +427,15 @@ fun HomeScreen(vm: TrackViewModel) {
                 onReorder = { ids ->
                     runCatching { vm.reorderGroup(ids) }
                 },
+            )
+        }
+        if (showBadges) {
+            AchievementsDialog(
+                earned = vm.earnedBadges,
+                pinned = vm.pinnedBadgeIds,
+                activity = totalGrowth,
+                onTogglePin = { vm.togglePinnedBadge(it) },
+                onDismiss = { showBadges = false },
             )
         }
     }
@@ -629,6 +642,8 @@ private fun HeroTile(
     tags: Int,
     combined: Map<String, Int>,
     filesSize: String = "0 B",
+    badgeCount: Int = 0,
+    onBadges: () -> Unit = {},
 ) {
     var bgIndex by remember { mutableIntStateOf(0) }
     var monkeyOn by remember { mutableStateOf(false) }
@@ -661,55 +676,81 @@ private fun HeroTile(
     Column(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(32.dp))
+            .clip(RoundedCornerShape(28.dp))
             .background(currentBg)
             .markTour("activity")
             .clickable {
                 if (monkeyOn) jumpToken++ else bgIndex = (bgIndex + 1) % bgColors.size
             }
-            .padding(20.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {
-        Text("Activity", fontSize = 44.sp, fontWeight = FontWeight.Medium, color = ink, letterSpacing = (-1).sp)
-        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Activity", fontSize = 32.sp, fontWeight = FontWeight.Medium, color = ink, letterSpacing = (-0.5).sp, modifier = Modifier.weight(1f))
+            if (badgeCount > 0) {
+                Row(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(ink.copy(alpha = 0.08f))
+                        .clickable(onClick = onBadges)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BadgeMark(com.trackme.app.data.BadgeBook.SCAN_1, 18.dp)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        badgeCount.toString(),
+                        color = ink,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
         if (monkeyOn) {
             MonkeyRun(
                 jumpToken = jumpToken,
                 ink = ink,
                 onOut = { monkeyOn = false },
-                modifier = Modifier.fillMaxWidth().height(96.dp),
+                modifier = Modifier.fillMaxWidth().height(72.dp),
             )
         } else {
-            WaveformBars(bars, Modifier.fillMaxWidth().height(56.dp), ink, ink.copy(alpha = 0.16f))
+            WaveformBars(bars, Modifier.fillMaxWidth().height(40.dp), ink, ink.copy(alpha = 0.16f))
         }
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             Column(
                 Modifier
-                    .weight(1.6f)
+                    .weight(1.35f)
                     .markTour("contributions")
                     .then(if (!monkeyOn) Modifier.clickable { monkeyOn = true } else Modifier),
             ) {
                 val countText = compactCount(totalGrowth)
                 Text(
                     countText,
-                    fontSize = if (countText.length >= 7) 34.sp else 44.sp,
+                    fontSize = if (countText.length >= 7) 22.sp else 28.sp,
                     fontWeight = FontWeight.Medium,
                     color = ink,
                     maxLines = 1,
                     softWrap = false,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(2.dp))
                 Text(
                     "Contributions this year",
-                    fontSize = 12.sp, color = ink.copy(alpha = 0.6f),
+                    fontSize = 11.sp,
+                    color = ink.copy(alpha = 0.6f),
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
-            HeroSmall(tags.toString(), "Tags", Modifier.weight(0.45f))
+            HeroSmall(tags.toString(), "Tags", Modifier.weight(0.7f))
             HeroSmall(
                 value = filesSize,
                 label = "Size",
-                modifier = Modifier.weight(0.7f),
+                modifier = Modifier.weight(0.85f),
             )
         }
     }
@@ -829,15 +870,15 @@ private fun HeroSmall(value: String, label: String, modifier: Modifier) {
     Column(modifier) {
         Text(
             value,
-            fontSize = if (value.length > 5) 18.sp else 24.sp,
-            color = Brand.Ink.copy(alpha = 0.45f),
+            fontSize = if (value.length > 5) 14.sp else 18.sp,
+            color = Brand.Ink,
             fontWeight = FontWeight.Medium,
             maxLines = 1,
             softWrap = false,
             overflow = TextOverflow.Ellipsis,
         )
-        Spacer(Modifier.height(4.dp))
-        Text(label, fontSize = 11.sp, color = Brand.Ink.copy(alpha = 0.55f), maxLines = 1)
+        Spacer(Modifier.height(2.dp))
+        Text(label, fontSize = 11.sp, color = Brand.Ink.copy(alpha = 0.55f), maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -1039,7 +1080,7 @@ private fun AccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onC
                             Spacer(Modifier.height(4.dp))
                             Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
                         }
-                        CountChart(m.spark, Modifier.width(132.dp).height(72.dp), ink)
+                        CountChart(m.spark, Modifier.width(136.dp).height(74.dp), ink, graphKind(acc.platform))
                     }
                 }
             }
@@ -1097,57 +1138,55 @@ private fun AccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onC
 private fun GridAccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onClick: () -> Unit) {
     val m = remember(acc) { cardModel(acc) }
 
-    Tile(
+    val ink = Brand.Ink
+    Column(
         Modifier
             .fillMaxWidth()
             .height(170.dp)
+            .clip(RoundedCornerShape(28.dp))
+            .background(acc.platform.cardColor)
             .clickable(onClick = onClick)
+            .padding(14.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(14.dp),
-            verticalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AccountAvatar(acc, 36.dp)
-                Spacer(Modifier.width(8.dp))
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        acc.name.ifBlank { acc.handle },
-                        color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                    Text(
-                        acc.tagLine(withPlatform = false),
-                        color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
-                }
-                IconButton(onClick = onToggleVisibility, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        if (acc.isHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
-                        contentDescription = "Toggle Visibility",
-                        tint = Color.White,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            AccountAvatar(acc, 36.dp)
+            Spacer(Modifier.width(8.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    acc.name.ifBlank { acc.handle },
+                    color = ink, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    acc.tagLine(withPlatform = false),
+                    color = ink.copy(alpha = 0.6f), fontSize = 11.sp,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
-            if (m.big.isNotBlank()) {
-                Column {
-                    Text(m.big, color = Brand.Coral, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                    Text(m.bigLabel, color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
+            IconButton(onClick = onToggleVisibility, modifier = Modifier.size(32.dp)) {
+                Icon(
+                    if (acc.isHidden) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                    contentDescription = "Toggle Visibility",
+                    tint = ink,
+                    modifier = Modifier.size(18.dp)
+                )
             }
-            Text(
-                acc.platform.label,
-                color = Color.White.copy(alpha = 0.75f),
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
+        if (m.big.isNotBlank()) {
+            Column {
+                Text(m.big, color = ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                Text(m.bigLabel, color = ink.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+        }
+        Text(
+            acc.platform.label,
+            color = ink.copy(alpha = 0.75f),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -1157,43 +1196,39 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
     val totalCount = group.filter { !it.isHidden }.mapNotNull { it.count }.sum()
     val label = if (group.any { it.platform.fullScan }) "Contributions" else acc.countLabel
 
+    val ink = Brand.Ink
     Box(Modifier.fillMaxWidth().height(190.dp), contentAlignment = Alignment.Center) {
-        // Bottom layer (Left tilt)
-        Tile(
+        Box(
             Modifier
                 .fillMaxWidth(0.85f)
                 .height(160.dp)
                 .offset(x = (-8).dp, y = 8.dp)
                 .rotate(-6f)
-        ) { 
-            Box(Modifier.fillMaxSize().background(acc.platform.cardColor.copy(alpha = 0.2f))) 
-        }
-        
-        // Middle layer (Right tilt)
-        Tile(
+                .clip(RoundedCornerShape(28.dp))
+                .background(acc.platform.cardColor.copy(alpha = 0.45f))
+        )
+        Box(
             Modifier
                 .fillMaxWidth(0.9f)
                 .height(165.dp)
                 .offset(x = 6.dp, y = 2.dp)
                 .rotate(4f)
-        ) { 
-            Box(Modifier.fillMaxSize().background(acc.platform.cardColor.copy(alpha = 0.35f))) 
-        }
-
-        // Top layer (Straight)
-        Tile(
+                .clip(RoundedCornerShape(28.dp))
+                .background(acc.platform.cardColor.copy(alpha = 0.7f))
+        )
+        Column(
             Modifier
                 .fillMaxWidth()
                 .height(170.dp)
+                .clip(RoundedCornerShape(28.dp))
+                .background(acc.platform.cardColor)
                 .clickable(onClick = onClick)
+                .padding(14.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Column(
-                Modifier.fillMaxSize().padding(14.dp),
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Box(
-                        Modifier.size(36.dp).clip(CircleShape).background(acc.platform.cardColor),
+                        Modifier.size(36.dp).clip(CircleShape).background(ink),
                         contentAlignment = Alignment.Center
                     ) {
                         Text("+${group.size}", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -1202,30 +1237,29 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
                     Column(Modifier.weight(1f)) {
                         Text(
                             acc.name.ifBlank { acc.handle },
-                            color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp,
+                            color = ink, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             "Shows first · ${group.size}",
-                            color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp,
+                            color = ink.copy(alpha = 0.6f), fontSize = 11.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
                 Column {
                     val big = if (totalCount > 0) compactCount(totalCount) else "Multiple"
-                    Text(big, color = Brand.Coral, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1)
-                    Text("Total $label", color = Color.White.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(big, color = ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
+                    Text("Total $label", color = ink.copy(alpha = 0.7f), fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 Row(
                     Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(acc.platform.label, color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                    Icon(Icons.Default.ViewList, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                    Text(acc.platform.label, color = ink.copy(alpha = 0.75f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    Icon(Icons.Default.ViewList, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
                 }
-            }
         }
     }
 }

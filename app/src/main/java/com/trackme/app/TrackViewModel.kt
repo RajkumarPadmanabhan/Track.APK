@@ -19,6 +19,7 @@ import com.trackme.app.data.PublicProfile
 import com.trackme.app.data.SocialApi
 import com.trackme.app.data.SortMode
 import com.trackme.app.data.Days
+import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.Store
 import com.trackme.app.data.Sync
 import com.trackme.app.data.TrackedAccount
@@ -31,6 +32,8 @@ import com.trackme.app.data.newAccount
 import com.trackme.app.data.NewsDataRepository
 import com.trackme.app.data.UploadedFile
 import com.trackme.app.data.Backup
+import com.trackme.app.data.BadgeBook
+import com.trackme.app.data.EarnedBadge
 import com.trackme.app.data.DesktopLink
 import com.trackme.app.data.compactCount
 import com.trackme.app.data.formatBytes
@@ -60,6 +63,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     init {
+        loadBadgeState()
+        refreshBadges()
         viewModelScope.launch {
             while (true) {
                 kotlinx.coroutines.delay(1000L)
@@ -78,6 +83,12 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
     val totalUploadedBytes: Long
         get() = uploadedFiles.sumOf { it.originalSize }
+    var earnedBadges by mutableStateOf<List<EarnedBadge>>(emptyList())
+        private set
+    var pinnedBadgeIds by mutableStateOf<List<String>>(emptyList())
+        private set
+    var verified by mutableStateOf(false)
+        private set
     var screen by mutableStateOf(Screen.HOME)
     var showAdd by mutableStateOf(false)
     var detailId by mutableStateOf<String?>(null)
@@ -130,6 +141,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     private var newsJob: Job? = null
+    private var newsBusy = false
+    private var newsGen = 0
 
     fun toggleNewsTopic(id: String) {
         if (NewsTopics.all.none { it.id == id }) return
@@ -139,35 +152,56 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         else return
         newsTopicIds = next
         prefs.edit().putString("news_topics", next.joinToString(",")).apply()
-        loadLiveNews()
+        loadLiveNews(keepCurrent = false)
     }
 
-    fun loadLiveNews() {
-        newsJob?.cancel()
+    fun loadLiveNews(keepCurrent: Boolean = false) {
         val topics = NewsTopics.selected(newsTopicIds)
+        val allowed = topics.map { it.label }.toSet()
         if (topics.isEmpty()) {
+            newsJob?.cancel()
+            newsBusy = false
             _newsFeed.value = emptyList()
             _isNewsLoading.value = false
             return
         }
-        newsJob = viewModelScope.launch {
-            _isNewsLoading.value = true
+        if (!keepCurrent) {
+            newsJob?.cancel()
+            newsBusy = false
             _newsFeed.value = emptyList()
+            _isNewsLoading.value = true
+        } else {
+            _newsFeed.value = NewsDataRepository.arrange(_newsFeed.value.filter { it.categoryTag in allowed })
+            if (newsBusy) return
+        }
+        val gen = ++newsGen
+        newsJob = viewModelScope.launch {
+            newsBusy = true
             val seen = LinkedHashMap<String, UserNewsPost>()
+            if (keepCurrent) {
+                for (post in _newsFeed.value) {
+                    val key = post.sourceUrl.ifBlank { post.id }.lowercase()
+                    if (key.isNotBlank()) seen[key] = post
+                }
+            }
             try {
                 NewsDataRepository.liveFlow(topics).collect { batch ->
                     for (post in batch) {
-                        val key = post.sourceUrl.ifBlank { post.id }.lowercase()
-                        if (key.isNotBlank()) seen.putIfAbsent(key, post)
+                        val clean = NewsDataRepository.cleanPost(post)
+                        val key = clean.sourceUrl.ifBlank { clean.id }.lowercase()
+                        if (key.isNotBlank()) seen[key] = clean
                     }
-                    if (seen.isNotEmpty()) _newsFeed.value = seen.values.toList()
+                    if (seen.isNotEmpty()) _newsFeed.value = NewsDataRepository.arrange(seen.values.toList())
                 }
-                _newsFeed.value = seen.values.toList()
+                if (seen.isNotEmpty()) _newsFeed.value = NewsDataRepository.arrange(seen.values.toList())
             } catch (e: Throwable) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
-                if (seen.isNotEmpty()) _newsFeed.value = seen.values.toList()
+                if (seen.isNotEmpty()) _newsFeed.value = NewsDataRepository.arrange(seen.values.toList())
             } finally {
-                _isNewsLoading.value = false
+                if (gen == newsGen) {
+                    newsBusy = false
+                    _isNewsLoading.value = false
+                }
             }
         }
     }
@@ -362,6 +396,31 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         suggestAppName(input)
     }
 
+    fun onOtherInput(raw: String) {
+        input = raw
+        suggestAppName(raw)
+        val parsed = Platform.PORTFOLIO.parse(raw)
+        if (parsed == null) {
+            linkProfile = null
+            preview = null
+            previewNote = null
+            return
+        }
+        linkProfile = parsed
+        val host = parsed.url.substringAfter("://").removePrefix("www.").substringBefore('/').substringBefore('?')
+        val name = host.substringBefore('.').replaceFirstChar { it.uppercase() }.ifBlank { "Website" }
+        preview = PublicProfile(
+            name = name,
+            handle = host.ifBlank { parsed.handle },
+            subtitle = parsed.url,
+            description = null,
+            imageUrl = null,
+            stats = emptyList(),
+        )
+        previewNote = null
+        error = null
+    }
+
     private fun youtubeKeyForScan(): String {
         val typed = youtubeKeyDraft.trim()
         if (typed.isNotBlank()) saveYoutubeKey(typed)
@@ -426,6 +485,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 uploadedFiles = listOf(record) + uploadedFiles.filter { it.id != record.id }
                 session?.let { UploadedFileStore.save(prefs, it.email, uploadedFiles) }
+                refreshBadges()
                 android.widget.Toast.makeText(
                     context,
                     "File uploaded successfully",
@@ -470,6 +530,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         session = s
         accounts = Store.loadAccounts(prefs, e)
         uploadedFiles = UploadedFileStore.load(prefs, e)
+        loadBadgeState()
+        refreshBadges()
         screen = Screen.HOME
         refreshNote = null
         return true
@@ -486,8 +548,74 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         session = s
         accounts = Store.loadAccounts(prefs, e)
         uploadedFiles = UploadedFileStore.load(prefs, e)
+        loadBadgeState()
+        refreshBadges()
         screen = Screen.HOME
         refreshNote = null
+        return true
+    }
+
+    private fun badgeKey(email: String, name: String) = "${name}_$email"
+
+    private fun loadBadgeState() {
+        val email = session?.email
+        if (email == null) {
+            earnedBadges = emptyList()
+            pinnedBadgeIds = emptyList()
+            verified = false
+            return
+        }
+        earnedBadges = BadgeBook.fromJson(prefs.getString(badgeKey(email, "badges"), null))
+        pinnedBadgeIds = prefs.getString(badgeKey(email, "pinned"), "")
+            .orEmpty()
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        verified = prefs.getBoolean(badgeKey(email, "verified"), false)
+    }
+
+    private fun rememberAppDay(email: String): Int {
+        val key = badgeKey(email, "app_days")
+        val days = prefs.getStringSet(key, emptySet())?.toHashSet() ?: HashSet()
+        val today = Days.key()
+        if (days.add(today)) prefs.edit().putStringSet(key, days).apply()
+        return days.size
+    }
+
+    fun refreshBadges() {
+        val email = session?.email ?: return
+        val next = BadgeBook.evaluate(
+            scans = accounts.count { !it.asApp },
+            uploads = uploadedFiles.size,
+            activity = combinedActivity(accounts).values.sum().toLong() +
+                accounts.filter { !it.isHidden }.sumOf { it.count ?: 0L },
+            bytes = totalUploadedBytes,
+            activeDays = rememberAppDay(email),
+            existing = earnedBadges,
+        )
+        if (next.map { it.id to it.earnedAt } != earnedBadges.map { it.id to it.earnedAt }) {
+            earnedBadges = next
+            prefs.edit().putString(badgeKey(email, "badges"), BadgeBook.toJson(next)).apply()
+            val live = next.map { it.id }.toSet()
+            if (pinnedBadgeIds.any { it !in live }) {
+                pinnedBadgeIds = pinnedBadgeIds.filter { it in live }
+                prefs.edit().putString(badgeKey(email, "pinned"), pinnedBadgeIds.joinToString(",")).apply()
+            }
+        }
+    }
+
+    fun togglePinnedBadge(id: String) {
+        val email = session?.email ?: return
+        if (earnedBadges.none { it.id == id }) return
+        pinnedBadgeIds = if (id in pinnedBadgeIds) pinnedBadgeIds.filter { it != id } else pinnedBadgeIds + id
+        prefs.edit().putString(badgeKey(email, "pinned"), pinnedBadgeIds.joinToString(",")).apply()
+    }
+
+    fun redeemCode(code: String): Boolean {
+        val email = session?.email ?: return false
+        if (code.trim() != "SPECIALDEALX") return false
+        verified = true
+        prefs.edit().putBoolean(badgeKey(email, "verified"), true).apply()
         return true
     }
 
@@ -548,6 +676,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 ?.let { updateThemeColor(it) }
             accounts = Store.loadAccounts(prefs, email)
             uploadedFiles = UploadedFileStore.load(prefs, email)
+            refreshBadges()
             android.widget.Toast.makeText(context, "Backup restored", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
@@ -559,6 +688,9 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         session = null
         accounts = emptyList()
         uploadedFiles = emptyList()
+        earnedBadges = emptyList()
+        pinnedBadgeIds = emptyList()
+        verified = false
         screen = Screen.HOME
         showAdd = false
         detailId = null
@@ -749,6 +881,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun persist() {
         session?.let { Store.saveAccounts(prefs, it.email, accounts) }
+        refreshBadges()
     }
 
     fun skipGit(totalContributions: Int) {
@@ -1100,6 +1233,19 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         val key = if (p == Platform.YOUTUBE) youtubeKeyForScan() else ""
         if (p == Platform.YOUTUBE && key.isBlank()) {
             previewNote = "Add your YouTube API key once. It is reused for every channel."
+            return
+        }
+        if (p == Platform.PORTFOLIO) {
+            val host = parsed.url.substringAfter("://").removePrefix("www.").substringBefore('/').substringBefore('?')
+            val name = host.substringBefore('.').replaceFirstChar { it.uppercase() }.ifBlank { "Website" }
+            preview = PublicProfile(
+                name = name,
+                handle = host.ifBlank { parsed.handle },
+                subtitle = parsed.url,
+                description = null,
+                imageUrl = null,
+                stats = emptyList(),
+            )
             return
         }
         loading = true

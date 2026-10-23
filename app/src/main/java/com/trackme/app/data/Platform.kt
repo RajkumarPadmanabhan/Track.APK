@@ -89,8 +89,8 @@ enum class Platform(
         "https://www.facebook.com/",
     ),
     PORTFOLIO(
-        "Portfolio Website", "https://myportfolio.com", false,
-        "Shows follower and following counts when that website publishes them.",
+        "Other", "https://example.com", false,
+        "Any website. The logo matches the link.",
         Regex("""(?:https?://)?([A-Za-z0-9_.-]+\.[A-Za-z]{2,}(?:/[^\s]*)?)""", RegexOption.IGNORE_CASE),
         Regex("^[A-Za-z0-9_.-]+\\.[A-Za-z]{2,}$"),
         "https://",

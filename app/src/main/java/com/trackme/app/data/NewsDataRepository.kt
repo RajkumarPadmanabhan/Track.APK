@@ -65,7 +65,7 @@ object NewsDataRepository {
         for (topic in topics) {
             for (feed in topic.feeds) {
                 launch(Dispatchers.IO) {
-                    val posts = readFeed(feed, topic.label)
+                    val posts = readFeedCached(feed, topic.label)
                     if (posts.isNotEmpty()) send(posts)
                 }
             }
@@ -144,7 +144,7 @@ object NewsDataRepository {
                 description = description,
                 sourceName = source,
                 sourceUrl = link,
-                publishedAt = (tagText(body, "pubDate") ?: tagText(body, "published") ?: tagText(body, "updated") ?: "Today").take(16),
+                publishedAt = tagText(body, "pubDate") ?: tagText(body, "published") ?: tagText(body, "updated") ?: "Today",
                 imageUrl = image?.takeIf { it.startsWith("http") },
                 categoryTag = category,
             )
@@ -202,6 +202,80 @@ object NewsDataRepository {
             if (url.startsWith("http")) return url
         }
         return null
+    }
+
+    private val feedCache = HashMap<String, Pair<Long, List<UserNewsPost>>>()
+
+    private fun readFeedCached(endpoint: String, category: String): List<UserNewsPost> {
+        val now = System.currentTimeMillis()
+        synchronized(feedCache) {
+            feedCache[endpoint]?.let { (at, posts) ->
+                if (now - at < 8_000L && posts.isNotEmpty()) return posts
+            }
+        }
+        val posts = readFeed(endpoint, category)
+        if (posts.isNotEmpty()) synchronized(feedCache) { feedCache[endpoint] = now to posts }
+        return posts
+    }
+
+    fun cleanPost(post: UserNewsPost): UserNewsPost {
+        val title = stripLinks(post.title)
+        val description = stripLinks(post.description)
+        return if (title == post.title && description == post.description) post
+        else post.copy(title = title, description = description)
+    }
+
+    /** Newest day first. Stories from the chosen topics stay in date order. */
+    fun arrange(posts: List<UserNewsPost>): List<UserNewsPost> {
+        if (posts.size < 2) return posts
+        return posts.sortedWith(
+            compareByDescending<UserNewsPost> {
+                val time = parseNewsTime(it.publishedAt)
+                if (time > 0L) time else Long.MIN_VALUE
+            }.thenBy { it.title }
+        )
+    }
+
+    fun shortNewsDate(raw: String): String {
+        val time = parseNewsTime(raw)
+        if (time <= 0L) return stripLinks(raw).take(18)
+        val fmt = java.text.SimpleDateFormat("d MMM", java.util.Locale.US)
+        return fmt.format(java.util.Date(time))
+    }
+
+    private fun stripLinks(raw: String): String {
+        return raw.replace(Regex("""(?i)https?://\S+|www\.\S+"""), " ")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
+            .trim('-', '–', '—', '|', '·', ' ')
+            .trim()
+    }
+
+    private fun parseNewsTime(raw: String): Long {
+        val text = raw.trim()
+        if (text.isBlank() || text.equals("Today", true) || text.equals("Recently", true)) return 0L
+        val patterns = listOf(
+            "EEE, dd MMM yyyy HH:mm:ss Z",
+            "EEE, dd MMM yyyy HH:mm:ss z",
+            "EEE, d MMM yyyy HH:mm:ss Z",
+            "yyyy-MM-dd'T'HH:mm:ssXXX",
+            "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
+            "yyyy-MM-dd'T'HH:mm:ss'Z'",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd",
+        )
+        for (pattern in patterns) {
+            try {
+                val format = java.text.SimpleDateFormat(pattern, java.util.Locale.US)
+                format.isLenient = false
+                if (pattern.endsWith("'Z'")) format.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                val date = format.parse(text) ?: continue
+                return date.time
+            } catch (_: Exception) {
+            }
+        }
+        return 0L
     }
 
     private fun getJson(endpoint: String): JSONObject? {
