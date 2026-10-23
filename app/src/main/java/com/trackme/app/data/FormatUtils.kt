@@ -1,15 +1,20 @@
 package com.trackme.app.data
 
 import java.util.Locale
-import kotlin.math.ln
-import kotlin.math.pow
 
 fun formatMetricCount(count: Long): String {
-    if (count < 1000) return count.toString()
-    val exp = (ln(count.toDouble()) / ln(1000.0)).toInt().coerceIn(1, 6)
-    val formatChar = "kMGTPE"[exp - 1]
-    val value = count / 1000.0.pow(exp.toDouble())
-    return String.format(Locale.US, "%.1f%c", value, formatChar)
+    val a = Math.abs(count)
+    if (a < 1000) return count.toString()
+    if (a < 1_000_000) {
+        val v = count / 1000.0
+        val s = String.format(Locale.US, "%.2f", v).trimEnd('0')
+        val formatted = if (s.endsWith(".")) s + "0" else s
+        return formatted + "k"
+    }
+    val v = count / 1_000_000.0
+    val s = String.format(Locale.US, "%.2f", v).trimEnd('0')
+    val formatted = if (s.endsWith(".")) s + "0" else s
+    return formatted + "M"
 }
 
 fun formatMetricCount(count: Int): String = formatMetricCount(count.toLong())

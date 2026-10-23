@@ -105,14 +105,20 @@ fun parseCount(raw: String?): Long? {
     return Math.round(n * mult)
 }
 
-/** 842 -> "842", 12_345 -> "12.3K", 2_400_000 -> "2.4M". */
+/** 842 -> "842", 1000 -> "1.0k", 2450 -> "2.45k", 2400 -> "2.4k", 2_400_000 -> "2.4M". */
 fun compactCount(n: Long): String {
     val a = Math.abs(n)
-    return when {
-        a < 10_000 -> "%,d".format(n)
-        a < 1_000_000 -> trimZero("%.1f".format(n / 1_000.0)) + "K"
-        else -> trimZero("%.1f".format(n / 1_000_000.0)) + "M"
+    if (a < 1000) return n.toString()
+    if (a < 1_000_000) {
+        val v = n / 1000.0
+        val s = String.format(Locale.US, "%.2f", v).trimEnd('0')
+        val formatted = if (s.endsWith(".")) s + "0" else s
+        return formatted + "k"
     }
+    val v = n / 1_000_000.0
+    val s = String.format(Locale.US, "%.2f", v).trimEnd('0')
+    val formatted = if (s.endsWith(".")) s + "0" else s
+    return formatted + "M"
 }
 
 private fun trimZero(s: String) = if (s.endsWith(".0")) s.dropLast(2) else s

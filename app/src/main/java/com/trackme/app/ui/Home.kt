@@ -94,6 +94,8 @@ fun HomeScreen(vm: TrackViewModel) {
         vm.loadPersonalizedNews(userPlatforms)
     }
 
+    val yearContributions = remember(combined) { combined.values.sum() }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -128,7 +130,7 @@ fun HomeScreen(vm: TrackViewModel) {
             }
         }
 
-        item { HeroTile(todayEvents, gained, accounts.size, hasGit, combined) }
+        item { HeroTile(yearContributions, gained, accounts.size, hasGit, combined) }
 
         if (hasGit || combined.isNotEmpty()) {
             if (vm.gitSkipDay != Days.key()) {
@@ -228,7 +230,7 @@ private fun Header(name: String, avatarUrl: String?, onProfile: () -> Unit) {
 
 @Composable
 private fun HeroTile(
-    todayEvents: Int,
+    yearContributions: Int,
     gained: Long,
     tags: Int,
     hasGit: Boolean,
@@ -253,10 +255,10 @@ private fun HeroTile(
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.Bottom) {
             Column(Modifier.weight(1.3f)) {
-                Text(todayEvents.toString(), fontSize = 54.sp, fontWeight = FontWeight.Medium, color = ink, lineHeight = 56.sp)
+                Text(compactCount(yearContributions.toLong()), fontSize = 54.sp, fontWeight = FontWeight.Medium, color = ink, lineHeight = 56.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    if (hasGit) "Git events today" else "Add GitHub or GitLab",
+                    if (hasGit) "Contributions this year" else "Add GitHub or GitLab",
                     fontSize = 12.sp, color = ink.copy(alpha = 0.6f),
                 )
             }
@@ -349,11 +351,11 @@ private data class CardModel(
 
 private fun cardModel(a: TrackedAccount): CardModel {
     if (a.platform.fullScan) {
-        val today = a.eventsOn(0)
+        val yearTotal = a.activity.values.sum()
         val week = a.weekEvents()
         return CardModel(
-            big = today.toString(),
-            bigLabel = "Git events today",
+            big = compactCount(yearTotal.toLong()),
+            bigLabel = "Contributions this year",
             spark = a.spark(),
             panelLabel = "This week",
             panelValue = "$week event" + if (week == 1) "" else "s",
@@ -422,6 +424,7 @@ private fun AccountCard(acc: TrackedAccount, onClick: () -> Unit) {
                         Text(m.big, color = ink, fontSize = 46.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, lineHeight = 50.sp)
                         Spacer(Modifier.height(6.dp))
                         Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
+                        Spacer(Modifier.height(14.dp))
                     }
                     WaveformBars(m.spark, Modifier.width(92.dp).height(48.dp), ink, ink.copy(alpha = 0.18f))
                 }
