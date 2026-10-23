@@ -95,11 +95,10 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     private val _isNewsLoading = MutableStateFlow(false)
     val isNewsLoading: StateFlow<Boolean> = _isNewsLoading.asStateFlow()
 
-    fun loadPersonalizedNews(userPlatforms: List<Platform>) {
+    fun loadLiveNews() {
         viewModelScope.launch {
             _isNewsLoading.value = true
-            val news = NewsDataRepository.fetchNewsForPlatforms(userPlatforms)
-            _newsFeed.value = news
+            _newsFeed.value = NewsDataRepository.fetchLiveNews()
             _isNewsLoading.value = false
         }
     }

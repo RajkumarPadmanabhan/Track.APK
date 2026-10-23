@@ -2,16 +2,13 @@ package com.trackme.app.ui
 
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -30,7 +27,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.SpanStyle
@@ -38,7 +34,6 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.TrackViewModel
@@ -60,9 +55,6 @@ fun LoginScreen(vm: TrackViewModel) {
                 Spacer(Modifier.width(8.dp))
                 Text("TrackMe", fontWeight = FontWeight.Bold, fontSize = 20.sp)
             }
-
-            Spacer(Modifier.height(20.dp))
-            Collage()
 
             Spacer(Modifier.weight(1f))
 
@@ -130,42 +122,5 @@ fun LoginScreen(vm: TrackViewModel) {
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-    }
-}
-
-/** Three tilted sample cards, a preview of the home page. */
-@Composable
-private fun Collage() {
-    BoxWithConstraints(Modifier.fillMaxWidth().height(250.dp)) {
-        val w = maxWidth
-        SampleCard("Followers", "12.4K", "+128 today", Color(0xFFCBF26E), -6f, w * 0.52f, Modifier.offset(0.dp, 34.dp))
-        SampleCard("Git events", "24", "7-day streak", Color(0xFFD8CCFF), 5f, w * 0.5f, Modifier.offset(w * 0.47f, 0.dp))
-        SampleCard("Subscribers", "3,208", "+14 today", Color(0xFFF7E04D), -3f, w * 0.56f, Modifier.offset(w * 0.2f, 128.dp))
-    }
-}
-
-@Composable
-private fun SampleCard(
-    label: String,
-    value: String,
-    footer: String,
-    color: Color,
-    angle: Float,
-    cardWidth: Dp,
-    modifier: Modifier,
-) {
-    Column(
-        modifier
-            .rotate(angle)
-            .width(cardWidth)
-            .height(112.dp)
-            .clip(RoundedCornerShape(26.dp))
-            .background(color)
-            .padding(16.dp),
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        Text(label, color = Brand.Ink.copy(alpha = 0.65f), fontSize = 13.sp)
-        Text(value, color = Brand.Ink, fontSize = 34.sp, fontWeight = FontWeight.ExtraBold)
-        Text(footer, color = Brand.Ink.copy(alpha = 0.7f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
     }
 }

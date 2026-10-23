@@ -38,6 +38,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -52,7 +53,6 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.input.pointer.pointerInput
 import kotlin.random.Random
 import com.trackme.app.data.Platform
 import androidx.compose.ui.Alignment
@@ -68,7 +68,18 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.Screen
 import com.trackme.app.TrackViewModel
+import android.content.Intent
+import android.provider.Settings
+import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.trackme.app.data.Days
+import com.trackme.app.data.ScreenTime
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.compactCount
@@ -94,25 +105,25 @@ private fun greetingWithSymbol(): Pair<String, String> {
     }
 }
 
-private class RainDrop(
-    var x: Float,
-    var y: Float,
-    var length: Float,
-    var speed: Float,
-    var alpha: Float
+private data class RainDrop(
+    val x: Float,
+    val y: Float,
+    val length: Float,
+    val speed: Float,
+    val alpha: Float,
 )
 
 @Composable
 fun RainEffect(
     modifier: Modifier = Modifier,
-    dropCount: Int = 60
+    dropCount: Int = 40
 ) {
     val infiniteTransition = rememberInfiniteTransition(label = "rain")
     val time by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
+            animation = tween(1600, easing = LinearEasing),
             repeatMode = RepeatMode.Restart
         ),
         label = "rainTime"
@@ -124,8 +135,8 @@ fun RainEffect(
                 x = Random.nextFloat(),
                 y = Random.nextFloat(),
                 length = 20f + Random.nextFloat() * 30f,
-                speed = 0.018f + Random.nextFloat() * 0.025f,
-                alpha = 0.35f + Random.nextFloat() * 0.5f
+                speed = 0.55f + Random.nextFloat() * 0.9f,
+                alpha = 0.28f + Random.nextFloat() * 0.35f,
             )
         }
     }
@@ -134,21 +145,13 @@ fun RainEffect(
         val w = size.width
         val h = size.height
         drops.forEach { drop ->
-            drop.y += drop.speed
-            if (drop.y > 1f) {
-                drop.y = 0f
-                drop.x = Random.nextFloat()
-            }
             val startX = drop.x * w
-            val startY = drop.y * h
-            val endX = startX - drop.length * 0.2f
-            val endY = startY + drop.length
-
+            val startY = ((drop.y + time * drop.speed) % 1f) * h
             drawLine(
                 color = Color(0xFF80D8FF).copy(alpha = drop.alpha),
                 start = Offset(startX, startY),
-                end = Offset(endX, endY),
-                strokeWidth = 3f,
+                end = Offset(startX - drop.length * 0.2f, startY + drop.length),
+                strokeWidth = 2.5f,
                 cap = StrokeCap.Round
             )
         }
@@ -184,6 +187,9 @@ fun HomeScreen(vm: TrackViewModel) {
     val totalGrowth = yearContributions.toLong() + totalSubscribers
 
     Box(modifier = Modifier.fillMaxSize()) {
+        if (isRaining) {
+            RainEffect(modifier = Modifier.fillMaxSize())
+        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
@@ -291,14 +297,6 @@ fun HomeScreen(vm: TrackViewModel) {
             item { Spacer(Modifier.height(8.dp)) }
         }
 
-        if (isRaining) {
-            RainEffect(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .pointerInput(Unit) {}
-            )
-        }
-
         if (selectedGroupForPopup != null) {
             androidx.compose.ui.window.Dialog(onDismissRequest = { selectedGroupForPopup = null }) {
                 Box(
@@ -397,6 +395,36 @@ private fun HeroTile(
         )
     }
     val currentBg = bgColors[bgIndex % bgColors.size]
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var resumeKey by remember { mutableStateOf(0) }
+    var screenLabel by remember { mutableStateOf<String?>(null) }
+    var usageAllowed by remember { mutableStateOf(false) }
+    var usageChecked by remember { mutableStateOf(false) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) resumeKey += 1
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    LaunchedEffect(resumeKey) {
+        while (isActive) {
+            val (allowed, label) = withContext(Dispatchers.IO) {
+                val access = ScreenTime.hasAccess(context)
+                val text = if (access) {
+                    ScreenTime.todayMillis(context)?.let { ScreenTime.format(it) }?.takeIf { it.isNotBlank() }
+                } else {
+                    null
+                }
+                access to text
+            }
+            usageAllowed = allowed
+            screenLabel = label
+            usageChecked = true
+            delay(30_000)
+        }
+    }
     val ink = Brand.Ink
     val bars = remember(combined) {
         val raw = (35 downTo 0).map { (combined[Days.key(-it)] ?: 0).toFloat() }
@@ -425,6 +453,17 @@ private fun HeroTile(
                 )
             }
             HeroSmall(tags.toString(), "Tags", Modifier.weight(0.4f))
+            HeroSmall(
+                value = screenLabel ?: if (!usageChecked || usageAllowed) "" else "Allow",
+                label = "Time",
+                modifier = Modifier.weight(0.5f).then(
+                    if (usageAllowed) Modifier else Modifier.clickable {
+                        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        runCatching { context.startActivity(intent) }
+                    }
+                ),
+            )
         }
     }
 }

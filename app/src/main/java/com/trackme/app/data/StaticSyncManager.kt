@@ -14,7 +14,7 @@ object StaticSyncManager {
             PlatformExportItem(
                 platform = acc.platform.label,
                 username = acc.handle,
-                metric = acc.count?.let { compactCount(it) } ?: "0",
+                metric = acc.count?.takeIf { it > 0L }?.let { compactCount(it) }.orEmpty(),
                 label = acc.countLabel,
                 profileUrl = acc.url
             )
