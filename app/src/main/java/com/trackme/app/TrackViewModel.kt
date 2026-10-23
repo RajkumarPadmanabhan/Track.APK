@@ -388,9 +388,11 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         return false
     }
 
-    fun addDraft(): Boolean {
+    fun addDraft(linkedEmail: String? = null): Boolean {
         if (checkCrossAccountDuplicate()) return false
-        val draft = currentDraft() ?: return false
+        val base = currentDraft() ?: return false
+        val mail = linkedEmail?.trim()?.lowercase()?.takeIf { it.contains("@") }
+        val draft = if (mail == null) base else base.copy(linkedEmail = mail)
         val existing = accounts.firstOrNull { it.id == draft.id }
         accounts = if (existing != null) {
             accounts.map { if (it.id == draft.id) it.mergeWith(draft) else it }

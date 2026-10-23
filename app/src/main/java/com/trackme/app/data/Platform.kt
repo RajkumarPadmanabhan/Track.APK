@@ -60,6 +60,25 @@ enum class Platform(
         Regex("^@?[A-Za-z0-9_.-]+$"),
         "https://www.youtube.com/",
     ),
+    AMAZON(
+        "Amazon", "https://www.amazon.in/gp/css/order-history", false,
+        "Choose the Google email you use for this store. Cart products, orders, and the order total appear when the page includes them. " +
+            "A sign-in page has none of those, so nothing is filled in as 0.",
+        Regex(
+            """(?:https?://)?(?:www\.)?(?:amazon\.(?:in|com|co\.uk|de|ca|com\.au)|amzn\.in)(?:/([^\s?#]*))?""",
+            RegexOption.IGNORE_CASE,
+        ),
+        Regex("a^"),
+        "https://www.amazon.in/",
+    ),
+    FLIPKART(
+        "Flipkart", "https://www.flipkart.com/account/orders", false,
+        "Choose the Google email you use for this store. Cart products, orders, and the order total appear when the page includes them. " +
+            "A sign-in page has none of those, so nothing is filled in as 0.",
+        Regex("""(?:https?://)?(?:www\.)?flipkart\.com(?:/([^\s?#]*))?""", RegexOption.IGNORE_CASE),
+        Regex("a^"),
+        "https://www.flipkart.com/",
+    ),
     FACEBOOK(
         "Facebook", "https://facebook.com/pagename", false,
         "Shows follower and following counts for a profile or page when Facebook publishes them.",
@@ -90,6 +109,15 @@ enum class Platform(
 
         urlRegex.find(t)?.let { m ->
             val handle = m.groupValues[1]
+            if (this == AMAZON || this == FLIPKART) {
+                val path = handle.trim('/').ifBlank { "account" }.take(80)
+                val host = if (this == AMAZON) "www.amazon.in" else "www.flipkart.com"
+                val suffix = m.value
+                    .replace(Regex("^https?://", RegexOption.IGNORE_CASE), "")
+                    .replace(Regex("^www\\.", RegexOption.IGNORE_CASE), "")
+                val url = if (suffix.contains("/")) "https://$suffix" else "https://$host/$path"
+                return ParsedProfile(path, url)
+            }
             if (this == FACEBOOK) {
                 val id = Regex("""profile\.php\?id=(\d+)""", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)
                     ?: Regex("""/people/[^/?#]+/(\d+)""", RegexOption.IGNORE_CASE).find(t)?.groupValues?.get(1)

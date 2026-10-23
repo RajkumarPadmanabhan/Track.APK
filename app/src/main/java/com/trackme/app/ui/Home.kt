@@ -72,7 +72,9 @@ import com.trackme.app.data.Days
 import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.compactCount
+import com.trackme.app.data.formatRupees
 import com.trackme.app.data.parseCount
+import com.trackme.app.data.tagLine
 import com.trackme.app.data.computeStreak
 import com.trackme.app.data.deltaToday
 import com.trackme.app.data.eventsOn
@@ -321,7 +323,7 @@ fun HomeScreen(vm: TrackViewModel) {
                                     Spacer(Modifier.width(12.dp))
                                     Column(Modifier.weight(1f)) {
                                         Text(acc.name.ifBlank { acc.handle }, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text("@${acc.handle}", color = Color.White.copy(alpha=0.6f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text(acc.tagLine(withPlatform = false), color = Color.White.copy(alpha=0.6f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                     }
                                 }
                             }
@@ -545,6 +547,19 @@ private fun cardModel(a: TrackedAccount): CardModel {
     val following = a.extras.firstOrNull { it.first.equals("Following", true) }?.second
         ?.let { raw -> parseCount(raw)?.takeIf { it > 0L }?.let { compactCount(it) } }
     val (big, bigLabel, extras) = when (a.platform) {
+        Platform.AMAZON, Platform.FLIPKART -> {
+            val cart = a.extras.count { it.first == "Cart" }
+            val orders = a.extras.count { it.first == "Order" }
+            val side = buildList {
+                if (cart > 0) add("Cart" to cart.toString())
+                if (orders > 0 && shownCount == null) add("Orders" to orders.toString())
+            }
+            when {
+                shownCount != null -> Triple(formatRupees(shownCount), "Orders", side.filter { it.first == "Cart" })
+                cart > 0 -> Triple(cart.toString(), "Cart", emptyList())
+                else -> Triple("", "", emptyList())
+            }
+        }
         Platform.YOUTUBE -> Triple(
             shownCount?.let { compactCount(it) }.orEmpty(),
             if (shownCount != null) a.countLabel else "",
@@ -599,7 +614,7 @@ private fun AccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onC
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            "${acc.platform.label} · @${acc.handle}",
+                            acc.tagLine(),
                             color = ink.copy(alpha = 0.6f), fontSize = 12.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
@@ -701,7 +716,7 @@ private fun GridAccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "@${acc.handle}",
+                        acc.tagLine(withPlatform = false),
                         color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )

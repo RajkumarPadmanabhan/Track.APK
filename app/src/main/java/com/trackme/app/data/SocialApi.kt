@@ -106,6 +106,19 @@ object SocialApi {
     // Follower and following counts only. A missing count is left out.
     suspend fun fetchPreview(platform: Platform, profile: ParsedProfile): PublicProfile =
         withContext(Dispatchers.IO) {
+            if (platform == Platform.AMAZON || platform == Platform.FLIPKART) {
+                val shop = ShopReader.fetch(profile.url)
+                val handle = profile.handle.trim().trimStart('@').ifBlank { platform.label }
+                return@withContext PublicProfile(
+                    name = handle,
+                    handle = handle,
+                    subtitle = null,
+                    description = null,
+                    imageUrl = null,
+                    stats = emptyList(),
+                    shop = shop,
+                )
+            }
             val counts = SocialCountScraper.fetch(profile.url)
                 ?: throw ApiException("Couldn't open this ${platform.label} page. Showing the link instead.")
             val handle = profile.handle.trim().trimStart('@').ifBlank { profile.url }

@@ -88,6 +88,8 @@ val Platform.cardColor: Color
         Platform.X -> Color(0xFFCBF26E)
         Platform.YOUTUBE -> Color(0xFFFF7A85)
         Platform.FACEBOOK -> Color(0xFF8BB7F0)
+        Platform.AMAZON -> Color(0xFFFFC56E)
+        Platform.FLIPKART -> Color(0xFFFFE14A)
         Platform.PORTFOLIO -> Color(0xFF6EE7B7)
     }
 
@@ -101,6 +103,8 @@ val Platform.badge: String
         Platform.X -> "X"
         Platform.YOUTUBE -> "YT"
         Platform.FACEBOOK -> "FB"
+        Platform.AMAZON -> "AZ"
+        Platform.FLIPKART -> "FK"
         Platform.PORTFOLIO -> "WEB"
     }
 

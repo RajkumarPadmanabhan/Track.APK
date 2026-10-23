@@ -105,7 +105,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import com.trackme.app.data.ShopEntry
+import com.trackme.app.data.formatRupees
 import com.trackme.app.data.parseCount
+import com.trackme.app.data.parseMoney
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -279,7 +282,7 @@ private fun DetailScreen(vm: TrackViewModel, tab: Int) {
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(16.dp),
             )
-            profile != null -> LinkProfileCard(vm.platform, profile, vm.preview, vm.previewNote)
+            profile != null -> LinkProfileCard(vm.platform, profile, vm.preview, vm.previewNote, acc)
             user != null -> when (tab) {
                 0 -> OverviewTab(vm, user)
                 1 -> GraphsTab(vm)
@@ -335,6 +338,52 @@ private fun PillNav(selected: Int, onSelect: (Int) -> Unit) {
     }
 }
 
+private fun shopEntries(account: TrackedAccount?): List<ShopEntry> {
+    return account?.extras?.mapNotNull { (kind, value) ->
+        if (kind != "Cart" && kind != "Order") return@mapNotNull null
+        val title = value.substringBefore(" · ").trim()
+        if (title.isBlank()) return@mapNotNull null
+        ShopEntry(kind, title, value.substringAfter(" · ", "").trim())
+    }.orEmpty()
+}
+
+@Composable
+private fun ShopList(entries: List<ShopEntry>) {
+    val cart = entries.filter { it.kind == "Cart" }
+    val orders = entries.filter { it.kind == "Order" }
+    val total = orders.sumOf { parseMoney(it.amountLabel) }.takeIf { it > 0L }
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (total != null) {
+            Tile(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(formatRupees(total), fontSize = 32.sp, fontWeight = FontWeight.Bold)
+                    Text("Order total", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        if (cart.isNotEmpty()) ShopSection("Cart", cart)
+        if (orders.isNotEmpty()) ShopSection("Orders", orders)
+    }
+}
+
+@Composable
+private fun ShopSection(title: String, entries: List<ShopEntry>) {
+    Tile(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, fontWeight = FontWeight.Bold)
+            entries.forEach { entry ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(entry.title, modifier = Modifier.weight(1f), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    if (entry.amountLabel.isNotBlank()) {
+                        Spacer(Modifier.width(12.dp))
+                        Text(entry.amountLabel, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ---------- Link-only profile card (Instagram, LinkedIn, X, YouTube) ----------
 
 @Composable
@@ -343,6 +392,7 @@ private fun LinkProfileCard(
     profile: ParsedProfile,
     preview: PublicProfile?,
     note: String?,
+    account: TrackedAccount? = null,
 ) {
     val ctx = LocalContext.current
     Column(
@@ -356,6 +406,16 @@ private fun LinkProfileCard(
                 kept && (value.equals("Hidden", true) || (parseCount(value) ?: 0L) > 0L)
             }
             if (stats.isNotEmpty()) PreviewCard(preview.copy(stats = stats))
+        }
+        val shop = preview?.shop?.takeIf { it.isNotEmpty() } ?: shopEntries(account)
+        val shopEmail = account?.linkedEmail?.trim()?.takeIf {
+            it.contains("@") && (platform == Platform.AMAZON || platform == Platform.FLIPKART)
+        }
+        if (shopEmail != null || shop.isNotEmpty()) {
+            if (shopEmail != null) {
+                Text(shopEmail, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+            }
+            if (shop.isNotEmpty()) ShopList(shop)
         }
         note?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         Tile(Modifier.fillMaxWidth()) {

@@ -33,6 +33,8 @@ data class TrackedAccount(
     val addedAt: String,
     val syncedAt: Long,
     val isHidden: Boolean = false,
+    /** Google email the user picked for an Amazon or Flipkart tag. */
+    val linkedEmail: String? = null,
 )
 
 /** Fresh data read from a platform, before it is merged into a [TrackedAccount]. */
@@ -106,6 +108,15 @@ fun parseCount(raw: String?): Long? {
     return Math.round(n * mult)
 }
 
+/** "₹1,299.50" or "Rs 499" -> rupees. Returns 0 when the text has no amount. */
+fun parseMoney(raw: String?): Long {
+    val cleaned = raw?.replace(Regex("[^0-9.]"), "").orEmpty()
+    if (cleaned.isBlank() || cleaned == ".") return 0L
+    return Math.round(cleaned.toDoubleOrNull() ?: return 0L)
+}
+
+fun formatRupees(amount: Long): String = "₹" + "%,d".format(Locale.US, amount)
+
 /** 842 -> "842", 1000 -> "1.0k", 2450 -> "2.45k", 2400 -> "2.4k", 2_400_000 -> "2.4M". */
 fun compactCount(n: Long): String {
     val a = Math.abs(n)
@@ -177,7 +188,17 @@ fun TrackedAccount.mergeWith(f: TrackedAccount): TrackedAccount {
         activity = act,
         syncedAt = f.syncedAt,
         isHidden = isHidden,
+        linkedEmail = f.linkedEmail ?: linkedEmail,
     )
+}
+
+/** Home-card line. Shop tags show the Google email the user picked. */
+fun TrackedAccount.tagLine(withPlatform: Boolean = true): String {
+    val mail = linkedEmail?.trim()?.takeIf {
+        it.contains("@") && (platform == Platform.AMAZON || platform == Platform.FLIPKART)
+    }
+    val who = mail ?: "@${handle.trimStart('@')}"
+    return if (withPlatform) "${platform.label} · $who" else who
 }
 
 /** Change since the last day we have a saved value for. Null when there is nothing to compare. */
@@ -276,6 +297,21 @@ object Sync {
     )
 
     fun fromPreview(p: PublicProfile): Snapshot {
+        if (p.shop.isNotEmpty()) {
+            val total = p.shop.filter { it.kind == "Order" }.sumOf { parseMoney(it.amountLabel) }.takeIf { it > 0L }
+            return Snapshot(
+                name = p.name,
+                avatarUrl = null,
+                subtitle = null,
+                count = total,
+                countLabel = if (total != null) "Orders" else "",
+                extras = p.shop.map { entry ->
+                    val text = listOf(entry.title, entry.amountLabel).filter { it.isNotBlank() }.joinToString(" · ")
+                    entry.kind to text
+                },
+                activity = null,
+            )
+        }
         val main = p.stats.firstOrNull { it.first == "Followers" || it.first == "Subscribers" }
         val count = parseCount(main?.second)?.takeIf { it > 0L }
         val extras = p.stats.mapNotNull { (label, value) ->
@@ -324,7 +360,8 @@ object Sync {
             }
             Platform.YOUTUBE ->
                 if (youtubeKey.isBlank()) null else fromPreview(SocialApi.fetchYouTube(parsed, youtubeKey))
-            Platform.INSTAGRAM, Platform.LINKEDIN, Platform.FACEBOOK, Platform.PORTFOLIO, Platform.X ->
+            Platform.INSTAGRAM, Platform.LINKEDIN, Platform.FACEBOOK, Platform.PORTFOLIO, Platform.X,
+            Platform.AMAZON, Platform.FLIPKART ->
                 fromPreview(SocialApi.fetchPreview(acc.platform, parsed))
         }
     }
@@ -416,6 +453,7 @@ object Store {
         put("history", JSONObject().also { o -> a.history.forEach { (k, v) -> o.put(k, v) } })
         put("activity", JSONObject().also { o -> a.activity.forEach { (k, v) -> o.put(k, v) } })
         put("isHidden", a.isHidden)
+        put("linkedEmail", a.linkedEmail ?: JSONObject.NULL)
     }
 
     private fun fromJson(o: JSONObject): TrackedAccount? {
@@ -450,6 +488,7 @@ object Store {
                 addedAt = o.optString("addedAt"),
                 syncedAt = o.optLong("syncedAt"),
                 isHidden = o.optBoolean("isHidden", false),
+                linkedEmail = o.str("linkedEmail"),
             )
         } catch (e: Exception) {
             null

@@ -39,6 +39,14 @@ data class PublicProfile(
     val imageUrl: String?,
     val stats: List<Pair<String, String>>,
     val recentVideos: List<YouTubeVideoItem> = emptyList(),
+    val shop: List<ShopEntry> = emptyList(),
+)
+
+/** One cart product or one order read from Amazon or Flipkart. */
+data class ShopEntry(
+    val kind: String,
+    val title: String,
+    val amountLabel: String,
 )
 
 data class YouTubeVideoItem(

@@ -74,6 +74,7 @@ import androidx.compose.ui.unit.sp
 import com.trackme.app.Screen
 import com.trackme.app.TrackViewModel
 import com.trackme.app.data.TrackedAccount
+import com.trackme.app.data.tagLine
 import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.computeStreak
 import java.io.File
@@ -874,7 +875,7 @@ private fun TagRow(acc: TrackedAccount, onRemove: () -> Unit) {
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "${acc.platform.label} · @${acc.handle}",
+                    acc.tagLine(),
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,

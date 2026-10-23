@@ -36,6 +36,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -47,10 +48,14 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.TrackViewModel
+import com.trackme.app.auth.GoogleAuthManager
 import com.trackme.app.data.Platform
 import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.compactCount
+import com.trackme.app.data.formatRupees
 import com.trackme.app.data.parseCount
+import com.trackme.app.data.tagLine
+import kotlinx.coroutines.launch
 
 /**
  * "Scan a tag": pick a platform, paste a profile link, scan, then add the result to the home page.
@@ -58,7 +63,9 @@ import com.trackme.app.data.parseCount
 @Composable
 fun AddTagSheet(vm: TrackViewModel) {
     val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
     val p = vm.platform
+    val shop = p == Platform.AMAZON || p == Platform.FLIPKART
     val draft = vm.currentDraft()
 
     ModalBottomSheet(
@@ -155,12 +162,34 @@ fun AddTagSheet(vm: TrackViewModel) {
                 val tracked = vm.isTracked(draft)
                 Button(
                     onClick = {
-                        if (vm.addDraft()) {
-                            Toast.makeText(
-                                ctx,
-                                if (tracked) "Updated on your home page" else "Added to your home page",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                        if (!shop) {
+                            if (vm.addDraft()) {
+                                Toast.makeText(
+                                    ctx,
+                                    if (tracked) "Updated on your home page" else "Added to your home page",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
+                            return@Button
+                        }
+                        scope.launch {
+                            val email = GoogleAuthManager.signInWithGoogle(ctx).getOrNull()?.email
+                                ?.trim()?.lowercase()?.takeIf { it.contains("@") }
+                            if (email == null) {
+                                Toast.makeText(
+                                    ctx,
+                                    "Choose the Google email you use for ${p.label}",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                                return@launch
+                            }
+                            if (vm.addDraft(email)) {
+                                Toast.makeText(
+                                    ctx,
+                                    if (tracked) "Updated for $email" else "Added for $email",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            }
                         }
                     },
                     modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -168,7 +197,12 @@ fun AddTagSheet(vm: TrackViewModel) {
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                 ) {
                     Text(
-                        if (tracked) "Update on home" else "Add to home",
+                        when {
+                            shop && tracked -> "Choose email to update"
+                            shop -> "Choose email"
+                            tracked -> "Update on home"
+                            else -> "Add to home"
+                        },
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold,
                     )
@@ -201,13 +235,14 @@ private fun DraftCard(d: TrackedAccount) {
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "${d.platform.label} · @${d.handle}",
+                    d.tagLine(),
                     color = ink.copy(alpha = 0.65f), fontSize = 12.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
         }
-        val social = !d.platform.fullScan && d.platform != Platform.YOUTUBE
+        val shop = d.platform == Platform.AMAZON || d.platform == Platform.FLIPKART
+        val social = !shop && !d.platform.fullScan && d.platform != Platform.YOUTUBE
         val followers = d.count?.takeIf { it > 0L }
         val following = d.extras.firstOrNull { it.first.equals("Following", true) }?.second
             ?.let { raw -> parseCount(raw)?.takeIf { it > 0L }?.let { compactCount(it) } }
@@ -221,7 +256,7 @@ private fun DraftCard(d: TrackedAccount) {
                 if (followers != null) {
                     Column(modifier = Modifier.padding(start = 20.dp, top = 8.dp)) {
                         Text(
-                            text = compactCount(followers),
+                            text = if (shop) formatRupees(followers) else compactCount(followers),
                             style = MaterialTheme.typography.displaySmall.copy(
                                 fontSize = 34.sp,
                                 fontWeight = FontWeight.Bold,

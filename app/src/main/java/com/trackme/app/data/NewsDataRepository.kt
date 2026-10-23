@@ -18,6 +18,8 @@ object NewsDataRepository {
         if (activePlatforms.contains(Platform.INSTAGRAM)) queryKeywords.add("instagram")
         if (activePlatforms.contains(Platform.LINKEDIN)) queryKeywords.add("linkedin")
         if (activePlatforms.any { it == Platform.GITHUB || it == Platform.GITLAB }) queryKeywords.add("github")
+        if (activePlatforms.contains(Platform.AMAZON)) queryKeywords.add("amazon")
+        if (activePlatforms.contains(Platform.FLIPKART)) queryKeywords.add("flipkart")
 
         val searchQuery = if (queryKeywords.isNotEmpty()) {
             queryKeywords.joinToString(" OR ")
