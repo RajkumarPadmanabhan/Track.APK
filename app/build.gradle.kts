@@ -13,8 +13,8 @@ android {
         applicationId = "com.trackme.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 20
-        versionName = "1.3.8"
+        versionCode = 21
+        versionName = "1.3.9"
     }
 
     buildTypes {

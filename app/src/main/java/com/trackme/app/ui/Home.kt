@@ -66,15 +66,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.StrokeCap
-import kotlin.random.Random
 import com.trackme.app.data.Platform
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
@@ -119,59 +110,6 @@ private fun greetingWithSymbol(): Pair<String, String> {
     }
 }
 
-private data class RainDrop(
-    val x: Float,
-    val y: Float,
-    val length: Float,
-    val speed: Float,
-    val alpha: Float,
-)
-
-@Composable
-fun RainEffect(
-    modifier: Modifier = Modifier,
-    dropCount: Int = 40
-) {
-    val infiniteTransition = rememberInfiniteTransition(label = "rain")
-    val time by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1600, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rainTime"
-    )
-
-    val drops = remember {
-        List(dropCount) {
-            RainDrop(
-                x = Random.nextFloat(),
-                y = Random.nextFloat(),
-                length = 20f + Random.nextFloat() * 30f,
-                speed = 0.55f + Random.nextFloat() * 0.9f,
-                alpha = 0.28f + Random.nextFloat() * 0.35f,
-            )
-        }
-    }
-
-    androidx.compose.foundation.Canvas(modifier = modifier) {
-        val w = size.width
-        val h = size.height
-        drops.forEach { drop ->
-            val startX = drop.x * w
-            val startY = ((drop.y + time * drop.speed) % 1f) * h
-            drawLine(
-                color = Color(0xFF80D8FF).copy(alpha = drop.alpha),
-                start = Offset(startX, startY),
-                end = Offset(startX - drop.length * 0.2f, startY + drop.length),
-                strokeWidth = 2.5f,
-                cap = StrokeCap.Round
-            )
-        }
-    }
-}
-
 private fun todayLabel(): String =
     java.text.SimpleDateFormat("EEE, d MMM", Locale.getDefault()).format(Date())
 
@@ -190,7 +128,6 @@ fun HomeScreen(vm: TrackViewModel) {
     // Pull today's numbers when the home page opens (skipped if they are fresh).
     LaunchedEffect(accounts.size) { vm.refreshAccounts() }
 
-    var isRaining by remember { mutableStateOf(false) }
     var isGridView by remember { mutableStateOf(false) }
     var showBadges by remember { mutableStateOf(false) }
     var appSearch by remember { mutableStateOf(false) }
@@ -199,18 +136,11 @@ fun HomeScreen(vm: TrackViewModel) {
     val context = LocalContext.current
     var selectedGroupForPopup by remember { mutableStateOf<List<TrackedAccount>?>(null) }
 
-    LaunchedEffect(Unit) {
-        isRaining = com.trackme.app.data.WeatherApi.checkIsRaining()
-    }
-
     val yearContributions = remember(combined) { combined.values.sum() }
     val totalSubscribers = remember(accounts) { accounts.filter { !it.isHidden }.sumOf { it.count ?: 0L } }
     val totalGrowth = yearContributions.toLong() + totalSubscribers
 
     Box(modifier = Modifier.fillMaxSize()) {
-        if (isRaining) {
-            RainEffect(modifier = Modifier.fillMaxSize())
-        }
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),

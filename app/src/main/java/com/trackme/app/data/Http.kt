@@ -50,25 +50,3 @@ object HttpHtml {
 /** Returns the string value, or null when the key is missing, null or blank. */
 internal fun JSONObject.str(key: String): String? =
     if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }
-
-object WeatherApi {
-    suspend fun checkIsRaining(): Boolean = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        try {
-            val ipJson = Http.get("https://ipapi.co/json/")
-            val obj = JSONObject(ipJson)
-            val lat = obj.optDouble("latitude", 0.0)
-            val lon = obj.optDouble("longitude", 0.0)
-            if (lat == 0.0 && lon == 0.0) return@withContext false
-
-            val weatherUrl = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true"
-            val weatherJson = Http.get(weatherUrl)
-            val wObj = JSONObject(weatherJson).optJSONObject("current_weather") ?: return@withContext false
-            val code = wObj.optInt("weathercode", -1)
-
-            val rainCodes = setOf(51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99)
-            code in rainCodes
-        } catch (_: Exception) {
-            false
-        }
-    }
-}
