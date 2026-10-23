@@ -91,3 +91,17 @@ data class GhCollaborator(
     val htmlUrl: String,
     val contributions: Int = 0,
 )
+
+data class GhActionRun(
+    val id: Long,
+    val name: String,
+    val displayTitle: String,
+    val status: String,
+    val conclusion: String?,
+    val event: String,
+    val createdAt: String,
+    val updatedAt: String,
+    val htmlUrl: String,
+    val commitMessage: String? = null,
+    val authorName: String? = null,
+)

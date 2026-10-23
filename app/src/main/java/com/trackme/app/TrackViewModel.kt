@@ -208,6 +208,43 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // Repo actions & pages state
+    var actionsMap by mutableStateOf<Map<String, List<com.trackme.app.data.GhActionRun>>>(emptyMap())
+        private set
+    var pagesMap by mutableStateOf<Map<String, String?>>(emptyMap())
+        private set
+    var loadingActionsForRepo by mutableStateOf<String?>(null)
+        private set
+
+    fun loadActionsForRepo(fullName: String) {
+        if (actionsMap.containsKey(fullName) || loadingActionsForRepo == fullName) return
+        loadingActionsForRepo = fullName
+        viewModelScope.launch {
+            try {
+                val list = if (platform == Platform.GITLAB) {
+                    GitLabApi.fetchActions(fullName)
+                } else {
+                    GitHubApi.fetchActions(fullName)
+                }
+                actionsMap = actionsMap + (fullName to list)
+            } finally {
+                if (loadingActionsForRepo == fullName) loadingActionsForRepo = null
+            }
+        }
+    }
+
+    fun loadPagesForRepo(fullName: String) {
+        if (pagesMap.containsKey(fullName)) return
+        viewModelScope.launch {
+            val url = if (platform == Platform.GITLAB) {
+                GitLabApi.fetchPagesUrl(fullName)
+            } else {
+                GitHubApi.fetchPagesUrl(fullName)
+            }
+            pagesMap = pagesMap + (fullName to url)
+        }
+    }
+
     fun updateYoutubeKey(key: String) {
         youtubeKey = key
         prefs.edit().putString("yt_key", key.trim()).apply()

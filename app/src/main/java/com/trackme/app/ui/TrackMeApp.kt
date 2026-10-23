@@ -50,11 +50,19 @@ import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Group
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Star
+import android.graphics.Color as AndroidColor
+import android.graphics.Paint
+import android.graphics.Typeface
+import android.graphics.pdf.PdfDocument
+import java.io.File
+import java.io.FileOutputStream
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
@@ -708,15 +716,21 @@ private fun ReposTab(vm: TrackViewModel) {
 private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
     var showReleasesDialog by remember { mutableStateOf(false) }
     var showCollaboratorsDialog by remember { mutableStateOf(false) }
+    var showActionsDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(repo.fullName) {
         vm.loadReleasesForRepo(repo.fullName)
+        vm.loadActionsForRepo(repo.fullName)
+        vm.loadPagesForRepo(repo.fullName)
     }
 
     val releases = vm.releasesMap[repo.fullName]
     val isReleasesLoading = vm.loadingReleasesForRepo == repo.fullName
     val collaborators = vm.collaboratorsMap[repo.fullName]
     val isCollaboratorsLoading = vm.loadingCollaboratorsForRepo == repo.fullName
+    val actions = vm.actionsMap[repo.fullName]
+    val isActionsLoading = vm.loadingActionsForRepo == repo.fullName
+    val pagesUrl = vm.pagesMap[repo.fullName]
 
     Tile(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -746,7 +760,10 @@ private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
                 }
                 Text(date(repo.pushedAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 Button(onClick = { downloadRepo(ctx, repo) }) {
                     Icon(Icons.Default.Download, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
@@ -757,8 +774,6 @@ private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
                     Spacer(Modifier.width(6.dp))
                     Text("Share")
                 }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (releases == null || releases.isNotEmpty()) {
                     OutlinedButton(onClick = {
                         vm.loadReleasesForRepo(repo.fullName)
@@ -776,6 +791,21 @@ private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
                     Icon(Icons.Default.Group, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Collaborator")
+                }
+                OutlinedButton(onClick = {
+                    vm.loadActionsForRepo(repo.fullName)
+                    showActionsDialog = true
+                }) {
+                    Icon(Icons.Default.PlayCircle, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Actions")
+                }
+                if (!pagesUrl.isNullOrBlank()) {
+                    OutlinedButton(onClick = { openUrl(ctx, pagesUrl) }) {
+                        Icon(Icons.Default.Language, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("View page")
+                    }
                 }
             }
         }
@@ -796,6 +826,15 @@ private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
             collaborators = collaborators,
             isLoading = isCollaboratorsLoading,
             onDismiss = { showCollaboratorsDialog = false }
+        )
+    }
+
+    if (showActionsDialog) {
+        ActionsDialog(
+            repo = repo,
+            runs = actions,
+            isLoading = isActionsLoading,
+            onDismiss = { showActionsDialog = false }
         )
     }
 }
@@ -970,6 +1009,230 @@ private fun CollaboratorsDialog(
                                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(16.dp)
                                 )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+fun exportActionRunToPdf(context: Context, repo: GhRepo, run: com.trackme.app.data.GhActionRun) {
+    try {
+        val document = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create()
+        val page = document.startPage(pageInfo)
+        val canvas = page.canvas
+
+        val titlePaint = Paint().apply {
+            color = AndroidColor.BLACK
+            textSize = 20f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val subPaint = Paint().apply {
+            color = AndroidColor.DKGRAY
+            textSize = 11f
+        }
+        val headerPaint = Paint().apply {
+            color = AndroidColor.parseColor("#1F2937")
+            textSize = 13f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        }
+        val bodyPaint = Paint().apply {
+            color = AndroidColor.BLACK
+            textSize = 11f
+        }
+        val linePaint = Paint().apply {
+            color = AndroidColor.LTGRAY
+            strokeWidth = 1f
+        }
+
+        var y = 40f
+        canvas.drawText("TrackMe - GitHub Action Execution Report", 40f, y, titlePaint)
+        y += 22f
+        canvas.drawText("Repository: ${repo.fullName}", 40f, y, subPaint)
+        y += 16f
+        canvas.drawText("Generated: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())}", 40f, y, subPaint)
+        y += 20f
+        canvas.drawLine(40f, y, 555f, y, linePaint)
+        y += 28f
+
+        canvas.drawText("Workflow Run Summary", 40f, y, headerPaint)
+        y += 22f
+
+        val conclusionStr = run.conclusion?.replaceFirstChar { it.uppercase() } ?: "In Progress / Queued"
+        val details = listOf(
+            "Run ID" to run.id.toString(),
+            "Workflow Name" to run.name,
+            "Run Title" to run.displayTitle,
+            "Event Trigger" to run.event,
+            "Status" to run.status.replaceFirstChar { it.uppercase() },
+            "Conclusion" to conclusionStr,
+            "Triggered By" to (run.authorName ?: "Automated Trigger"),
+            "Created At" to run.createdAt,
+            "Updated At" to run.updatedAt,
+            "Run Web URL" to run.htmlUrl
+        )
+
+        for ((key, value) in details) {
+            canvas.drawText("$key:", 40f, y, headerPaint)
+            val valText = if (value.length > 55) value.take(52) + "..." else value
+            canvas.drawText(valText, 170f, y, bodyPaint)
+            y += 22f
+            if (y > 780f) break
+        }
+
+        y += 10f
+        canvas.drawLine(40f, y, 555f, y, linePaint)
+        y += 28f
+
+        val isSuccess = run.conclusion.equals("success", ignoreCase = true)
+        val statusText = if (isSuccess) {
+            "EXECUTION RESULT: SUCCESS - All jobs and steps passed without errors."
+        } else if (run.conclusion != null) {
+            "EXECUTION RESULT: ${run.conclusion?.uppercase()} - Run completed with status ${run.conclusion}."
+        } else {
+            "EXECUTION RESULT: RUNNING - Workflow run is in progress."
+        }
+
+        val statusPaint = Paint().apply {
+            textSize = 12f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            color = if (isSuccess) AndroidColor.parseColor("#15803D") else AndroidColor.parseColor("#B91C1C")
+        }
+        canvas.drawText(statusText, 40f, y, statusPaint)
+
+        document.finishPage(page)
+
+        val downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+        val fileName = "Action_Run_${repo.name}_${run.id}.pdf"
+        val file = File(downloadsDir, fileName)
+        FileOutputStream(file).use { out ->
+            document.writeTo(out)
+        }
+        document.close()
+
+        Toast.makeText(context, "PDF saved to Downloads: $fileName", Toast.LENGTH_LONG).show()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Failed to save PDF: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+@Composable
+private fun ActionsDialog(
+    repo: GhRepo,
+    runs: List<com.trackme.app.data.GhActionRun>?,
+    isLoading: Boolean,
+    onDismiss: () -> Unit
+) {
+    val ctx = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("${repo.name} Actions", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("GitHub Workflows & Pipeline Runs", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 380.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                if (isLoading) {
+                    Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator()
+                    }
+                } else if (runs.isNullOrEmpty()) {
+                    Text(
+                        "No actions or workflow runs found for this repository.",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(vertical = 12.dp)
+                    )
+                } else {
+                    runs.forEach { run ->
+                        val isSuccess = run.conclusion.equals("success", ignoreCase = true)
+                        val isFailure = run.conclusion.equals("failure", ignoreCase = true)
+                        val badgeColor = when {
+                            isSuccess -> Color(0xFF2E7D32)
+                            isFailure -> Color(0xFFC62828)
+                            else -> Color(0xFF1976D2)
+                        }
+
+                        Tile(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        run.displayTitle,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 14.sp,
+                                        modifier = Modifier.weight(1f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Box(
+                                        Modifier
+                                            .clip(RoundedCornerShape(50))
+                                            .background(badgeColor.copy(alpha = 0.2f))
+                                            .padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Text(
+                                            run.conclusion?.replaceFirstChar { it.uppercase() } ?: run.status,
+                                            color = badgeColor,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 11.sp
+                                        )
+                                    }
+                                }
+                                Text(
+                                    "Workflow: ${run.name} · Event: ${run.event}",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                if (run.createdAt.isNotBlank()) {
+                                    Text(
+                                        "Triggered ${date(run.createdAt)}" + (run.authorName?.let { " by @$it" } ?: ""),
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.padding(top = 4.dp)
+                                ) {
+                                    Button(
+                                        onClick = { exportActionRunToPdf(ctx, repo, run) },
+                                        shape = RoundedCornerShape(50),
+                                        modifier = Modifier.height(36.dp)
+                                    ) {
+                                        Icon(Icons.Default.Download, null, Modifier.size(14.dp))
+                                        Spacer(Modifier.width(4.dp))
+                                        Text("PDF Report", fontSize = 12.sp)
+                                    }
+                                    if (run.htmlUrl.isNotBlank()) {
+                                        TextButton(onClick = { openUrl(ctx, run.htmlUrl) }) {
+                                            Icon(Icons.Default.OpenInNew, null, Modifier.size(14.dp))
+                                            Spacer(Modifier.width(4.dp))
+                                            Text("Web", fontSize = 12.sp)
+                                        }
+                                    }
+                                }
                             }
                         }
                     }

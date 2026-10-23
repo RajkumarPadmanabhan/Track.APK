@@ -148,4 +148,48 @@ object GitLabApi {
         } catch (_: Exception) { }
         list
     }
+
+    suspend fun fetchActions(fullName: String): List<GhActionRun> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<GhActionRun>()
+        try {
+            val encoded = URLEncoder.encode(fullName, "UTF-8")
+            val arr = JSONArray(Http.get("$BASE/projects/$encoded/pipelines?per_page=30"))
+            for (i in 0 until arr.length()) {
+                val o = arr.getJSONObject(i)
+                val status = o.optString("status")
+                val conclusion = when (status) {
+                    "success" -> "success"
+                    "failed" -> "failure"
+                    "canceled" -> "cancelled"
+                    else -> null
+                }
+                list += GhActionRun(
+                    id = o.getLong("id"),
+                    name = "Pipeline #" + o.getLong("id"),
+                    displayTitle = "Ref: " + o.optString("ref", "main"),
+                    status = if (conclusion != null) "completed" else "in_progress",
+                    conclusion = conclusion,
+                    event = "pipeline",
+                    createdAt = o.optString("created_at"),
+                    updatedAt = o.optString("updated_at"),
+                    htmlUrl = o.optString("web_url"),
+                    commitMessage = "Ref: " + o.optString("ref"),
+                    authorName = null,
+                )
+            }
+        } catch (_: Exception) {}
+        list
+    }
+
+    suspend fun fetchPagesUrl(fullName: String): String? = withContext(Dispatchers.IO) {
+        val parts = fullName.split("/")
+        if (parts.size >= 2) {
+            val group = parts[0]
+            val project = parts[1]
+            val candidate = "https://$group.gitlab.io/$project/"
+            val code = HttpHtml.get(candidate, "text/html")
+            if (code != null) return@withContext candidate
+        }
+        null
+    }
 }

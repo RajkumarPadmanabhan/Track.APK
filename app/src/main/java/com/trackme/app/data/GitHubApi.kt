@@ -149,4 +149,48 @@ object GitHubApi {
         } catch (_: Exception) { }
         list
     }
+
+    suspend fun fetchActions(fullName: String): List<GhActionRun> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<GhActionRun>()
+        try {
+            val o = JSONObject(Http.get("https://api.github.com/repos/$fullName/actions/runs?per_page=30"))
+            val arr = o.optJSONArray("workflow_runs") ?: JSONArray()
+            for (i in 0 until arr.length()) {
+                val item = arr.getJSONObject(i)
+                val actor = item.optJSONObject("triggering_actor") ?: item.optJSONObject("actor")
+                val commit = item.optJSONObject("head_commit")
+                list += GhActionRun(
+                    id = item.getLong("id"),
+                    name = item.optString("name", "Workflow"),
+                    displayTitle = item.optString("display_title").ifBlank { commit?.optString("message") ?: "Run #${item.optLong("run_number")}" },
+                    status = item.optString("status", "completed"),
+                    conclusion = item.str("conclusion"),
+                    event = item.optString("event", "push"),
+                    createdAt = item.optString("created_at"),
+                    updatedAt = item.optString("updated_at"),
+                    htmlUrl = item.optString("html_url"),
+                    commitMessage = commit?.str("message"),
+                    authorName = actor?.str("login"),
+                )
+            }
+        } catch (_: Exception) {}
+        list
+    }
+
+    suspend fun fetchPagesUrl(fullName: String): String? = withContext(Dispatchers.IO) {
+        try {
+            val o = JSONObject(Http.get("https://api.github.com/repos/$fullName/pages"))
+            val htmlUrl = o.str("html_url")
+            if (!htmlUrl.isNullOrBlank()) return@withContext htmlUrl
+        } catch (_: Exception) {}
+        val parts = fullName.split("/")
+        if (parts.size == 2) {
+            val owner = parts[0]
+            val repo = parts[1]
+            val candidate = "https://$owner.github.io/$repo/"
+            val code = HttpHtml.get(candidate, "text/html")
+            if (code != null) return@withContext candidate
+        }
+        null
+    }
 }
