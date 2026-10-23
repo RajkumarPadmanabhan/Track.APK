@@ -132,7 +132,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     // App Update State
-    var currentAppVersion by mutableStateOf("1.2.0")
+    var currentAppVersion by mutableStateOf("1.2.2")
         private set
     var isCheckingAppUpdate by mutableStateOf(false)
         private set
@@ -456,9 +456,11 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                         val snap = Sync.fetch(acc, key) ?: continue
                         fresh[acc.id] = newAccount(acc.platform, ParsedProfile(acc.handle, acc.url), snap)
                     } catch (e: ApiException) {
-                        if (note == null) note = "${acc.platform.label}: ${e.message}"
+                        if (note == null && e.message?.contains("Rate limit", ignoreCase = true) != true) {
+                            note = "${acc.platform.label}: ${e.message}"
+                        }
                     } catch (e: Exception) {
-                        if (note == null) note = "Couldn't reach ${acc.platform.label}. Showing saved numbers."
+                        // Keep saved numbers silently
                     }
                 }
                 accounts = accounts.map { cur -> fresh[cur.id]?.let { cur.mergeWith(it) } ?: cur }

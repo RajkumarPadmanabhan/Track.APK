@@ -1,12 +1,22 @@
 package com.trackme.app.ui
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -19,8 +29,14 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -28,6 +44,13 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.net.URL
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
@@ -129,21 +152,126 @@ fun WaveformBars(
     dim: Color,
     gap: Dp = 3.dp,
 ) {
-    Canvas(modifier) {
+    var touchedIndex by remember { mutableStateOf<Int?>(null) }
+    val animatedTouchIndex by animateFloatAsState(
+        targetValue = touchedIndex?.toFloat() ?: -10f,
+        animationSpec = spring(stiffness = Spring.StiffnessMediumLow, dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "touchWave"
+    )
+
+    Canvas(
+        modifier = modifier
+            .pointerInput(values) {
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        val n = values.size
+                        if (n > 0) {
+                            val g = gap.toPx()
+                            val bw = ((size.width - g * (n - 1)) / n).coerceAtLeast(1f)
+                            val idx = (offset.x / (bw + g)).toInt().coerceIn(0, n - 1)
+                            touchedIndex = idx
+                        }
+                    },
+                    onDragEnd = { touchedIndex = null },
+                    onDragCancel = { touchedIndex = null },
+                    onDrag = { change, _ ->
+                        val n = values.size
+                        if (n > 0) {
+                            val g = gap.toPx()
+                            val bw = ((size.width - g * (n - 1)) / n).coerceAtLeast(1f)
+                            val idx = (change.position.x / (bw + g)).toInt().coerceIn(0, n - 1)
+                            touchedIndex = idx
+                        }
+                    }
+                )
+            }
+            .pointerInput(values) {
+                detectTapGestures(
+                    onPress = { offset ->
+                        val n = values.size
+                        if (n > 0) {
+                            val g = gap.toPx()
+                            val bw = ((size.width - g * (n - 1)) / n).coerceAtLeast(1f)
+                            val idx = (offset.x / (bw + g)).toInt().coerceIn(0, n - 1)
+                            touchedIndex = idx
+                            tryAwaitRelease()
+                            touchedIndex = null
+                        }
+                    }
+                )
+            }
+    ) {
         val n = values.size
         if (n == 0) return@Canvas
         val g = gap.toPx()
         val bw = ((size.width - g * (n - 1)) / n).coerceAtLeast(1f)
+        val activeTouch = animatedTouchIndex
+
         values.forEachIndexed { i, raw ->
             val v = raw.coerceIn(0f, 1f)
-            val h = if (v <= 0f) size.height * 0.12f else size.height * (0.22f + 0.78f * v)
+            val dist = kotlin.math.abs(i - activeTouch)
+            val waveMultiplier = if (dist < 4.5f) {
+                1.0f + 0.65f * (1.0f - (dist / 4.5f))
+            } else {
+                1.0f
+            }
+
+            val baseH = if (v <= 0f) size.height * 0.12f else size.height * (0.22f + 0.78f * v)
+            val h = (baseH * waveMultiplier).coerceAtMost(size.height)
+            val isHighlighted = dist < 1.2f
+
             drawRoundRect(
-                color = if (v <= 0f) dim else color,
+                color = when {
+                    isHighlighted -> color
+                    v <= 0f -> dim
+                    else -> color.copy(alpha = (0.7f + 0.3f * (1f - (dist / 5f).coerceAtMost(1f))))
+                },
                 topLeft = Offset(i * (bw + g), (size.height - h) / 2f),
                 size = Size(bw, h),
                 cornerRadius = CornerRadius(bw / 2f),
             )
         }
+    }
+}
+
+@Composable
+fun RemoteAvatar(url: String, size: Int = 72) {
+    val context = LocalContext.current
+    var bmp by remember(url) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(url) {
+        if (url.isBlank()) {
+            bmp = null
+            return@LaunchedEffect
+        }
+        bmp = withContext(Dispatchers.IO) {
+            runCatching {
+                when {
+                    url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true) -> {
+                        URL(url).openStream().use { BitmapFactory.decodeStream(it) }
+                    }
+                    url.startsWith("content://", ignoreCase = true) -> {
+                        context.contentResolver.openInputStream(Uri.parse(url))?.use {
+                            BitmapFactory.decodeStream(it)
+                        }
+                    }
+                    else -> {
+                        val f = java.io.File(url)
+                        if (f.exists()) BitmapFactory.decodeFile(f.absolutePath) else null
+                    }
+                }
+            }.getOrNull()
+        }
+    }
+    val mod = Modifier.size(size.dp).clip(CircleShape)
+    val imageBitmap = remember(bmp) {
+        bmp?.let {
+            try { it.asImageBitmap() } catch (e: Exception) { null }
+        }
+    }
+    if (imageBitmap != null) {
+        Image(imageBitmap, contentDescription = "avatar", modifier = mod, contentScale = ContentScale.Crop)
+    } else {
+        Box(mod.background(MaterialTheme.colorScheme.surfaceVariant))
     }
 }
 
@@ -194,6 +322,34 @@ fun PlatformBadge(platform: Platform, size: Dp = 44.dp, filled: Boolean = true) 
             fontWeight = FontWeight.Bold,
             fontSize = (size.value * 0.32f).sp,
         )
+    }
+}
+
+/** Avatar for a tracked account displaying profile photo with platform badge overlay. */
+@Composable
+fun AccountAvatar(acc: com.trackme.app.data.TrackedAccount, size: Dp = 44.dp) {
+    val imgUrl = acc.avatarUrl
+    Box(Modifier.size(size)) {
+        if (!imgUrl.isNullOrBlank()) {
+            RemoteAvatar(url = imgUrl, size = size.value.toInt())
+            Box(
+                Modifier
+                    .size(size * 0.42f)
+                    .align(Alignment.BottomEnd)
+                    .clip(CircleShape)
+                    .background(Brand.Ink),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    acc.platform.badge,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = (size.value * 0.16f).sp
+                )
+            }
+        } else {
+            PlatformBadge(acc.platform, size)
+        }
     }
 }
 

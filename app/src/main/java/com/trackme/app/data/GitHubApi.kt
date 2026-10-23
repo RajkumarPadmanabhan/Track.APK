@@ -7,53 +7,97 @@ import org.json.JSONObject
 
 object GitHubApi {
 
-    suspend fun fetchUser(username: String): GhUser = withContext(Dispatchers.IO) {
-        val o = JSONObject(Http.get("https://api.github.com/users/$username"))
-        GhUser(
-            login = o.getString("login"),
-            name = o.str("name"),
-            avatarUrl = o.optString("avatar_url"),
-            bio = o.str("bio"),
-            followers = o.optInt("followers"),
-            following = o.optInt("following"),
-            publicRepos = o.optInt("public_repos"),
-            htmlUrl = o.getString("html_url"),
-            createdAt = o.optString("created_at"),
-            location = o.str("location"),
+    private fun fetchUserFromWeb(username: String): GhUser? {
+        val html = HttpHtml.get("https://github.com/$username") ?: return null
+        val ogImage = Regex("""property="og:image"\s+content="([^"]+)"""").find(html)?.groupValues?.get(1)
+            ?: Regex("""content="([^"]+)"\s+property="og:image"""").find(html)?.groupValues?.get(1)
+            ?: "https://github.com/$username.png"
+        val title = Regex("""<title[^>]*>(.*?)</title>""", RegexOption.IGNORE_CASE).find(html)?.groupValues?.get(1)?.substringBefore("(")?.trim() ?: username
+        val followersMatch = Regex("""([\d.,]+[KMBkmb]?)\s+Followers""", RegexOption.IGNORE_CASE).find(html)
+        val followers = if (followersMatch != null) parseAbbreviatedNumber(followersMatch.groupValues[1]) else 0L
+        val followingMatch = Regex("""([\d.,]+[KMBkmb]?)\s+Following""", RegexOption.IGNORE_CASE).find(html)
+        val following = if (followingMatch != null) parseAbbreviatedNumber(followingMatch.groupValues[1]) else 0L
+        val reposMatch = Regex("""repositories\s*<span[^>]*class="[^"]*Counter[^"]*"[^>]*>\s*([\d.,]+[KMBkmb]?)\s*</span>""", RegexOption.IGNORE_CASE).find(html)
+        val reposCount = if (reposMatch != null) parseAbbreviatedNumber(reposMatch.groupValues[1]).toInt() else 0
+
+        return GhUser(
+            login = username,
+            name = title.ifBlank { username },
+            avatarUrl = ogImage,
+            bio = "GitHub Developer",
+            followers = followers.toInt(),
+            following = following.toInt(),
+            publicRepos = reposCount,
+            htmlUrl = "https://github.com/$username",
+            createdAt = "",
+            location = null
         )
+    }
+
+    private fun parseAbbreviatedNumber(text: String): Long {
+        return try {
+            val clean = text.replace(",", "").trim().lowercase()
+            when {
+                clean.endsWith("k") -> (clean.dropLast(1).toDouble() * 1000).toLong()
+                clean.endsWith("m") -> (clean.dropLast(1).toDouble() * 1_000_000).toLong()
+                else -> clean.toLongOrNull() ?: 0L
+            }
+        } catch (_: Exception) { 0L }
+    }
+
+    suspend fun fetchUser(username: String): GhUser = withContext(Dispatchers.IO) {
+        try {
+            val o = JSONObject(Http.get("https://api.github.com/users/$username"))
+            GhUser(
+                login = o.getString("login"),
+                name = o.str("name"),
+                avatarUrl = o.optString("avatar_url"),
+                bio = o.str("bio"),
+                followers = o.optInt("followers"),
+                following = o.optInt("following"),
+                publicRepos = o.optInt("public_repos"),
+                htmlUrl = o.getString("html_url"),
+                createdAt = o.optString("created_at"),
+                location = o.str("location"),
+            )
+        } catch (e: Exception) {
+            fetchUserFromWeb(username) ?: throw e
+        }
     }
 
     /** Fetches every public repo (paginated, 100 per page, up to 1000). */
     suspend fun fetchRepos(username: String): List<GhRepo> = withContext(Dispatchers.IO) {
         val all = mutableListOf<GhRepo>()
-        for (page in 1..10) {
-            val arr = JSONArray(
-                Http.get("https://api.github.com/users/$username/repos?per_page=100&page=$page&sort=pushed")
-            )
-            if (arr.length() == 0) break
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val fullName = o.getString("full_name")
-                val branch = o.optString("default_branch", "main")
-                all += GhRepo(
-                    name = o.getString("name"),
-                    fullName = fullName,
-                    description = o.str("description"),
-                    language = o.str("language"),
-                    stars = o.optInt("stargazers_count"),
-                    forks = o.optInt("forks_count"),
-                    sizeKb = o.optInt("size"),
-                    updatedAt = o.optString("updated_at"),
-                    pushedAt = o.optString("pushed_at"),
-                    htmlUrl = o.getString("html_url"),
-                    defaultBranch = branch,
-                    isFork = o.optBoolean("fork"),
-                    archived = o.optBoolean("archived"),
-                    zipUrl = "https://github.com/$fullName/archive/refs/heads/$branch.zip",
+        try {
+            for (page in 1..10) {
+                val arr = JSONArray(
+                    Http.get("https://api.github.com/users/$username/repos?per_page=100&page=$page&sort=pushed")
                 )
+                if (arr.length() == 0) break
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val fullName = o.getString("full_name")
+                    val branch = o.optString("default_branch", "main")
+                    all += GhRepo(
+                        name = o.getString("name"),
+                        fullName = fullName,
+                        description = o.str("description"),
+                        language = o.str("language"),
+                        stars = o.optInt("stargazers_count"),
+                        forks = o.optInt("forks_count"),
+                        sizeKb = o.optInt("size"),
+                        updatedAt = o.optString("updated_at"),
+                        pushedAt = o.optString("pushed_at"),
+                        htmlUrl = o.getString("html_url"),
+                        defaultBranch = branch,
+                        isFork = o.optBoolean("fork"),
+                        archived = o.optBoolean("archived"),
+                        zipUrl = "https://github.com/$fullName/archive/refs/heads/$branch.zip",
+                    )
+                }
+                if (arr.length() < 100) break
             }
-            if (arr.length() < 100) break
-        }
+        } catch (_: Exception) {}
         all
     }
 

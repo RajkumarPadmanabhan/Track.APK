@@ -54,10 +54,15 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Dashboard
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material3.ButtonDefaults
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.material.icons.filled.PlayCircle
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -176,47 +181,6 @@ private fun copyText(context: Context, text: String) {
     val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     cm.setPrimaryClip(ClipData.newPlainText("TrackMe", text))
     Toast.makeText(context, "Link copied", Toast.LENGTH_SHORT).show()
-}
-
-@Composable
-fun RemoteAvatar(url: String, size: Int = 72) {
-    val context = LocalContext.current
-    var bmp by remember(url) { mutableStateOf<Bitmap?>(null) }
-    LaunchedEffect(url) {
-        if (url.isBlank()) {
-            bmp = null
-            return@LaunchedEffect
-        }
-        bmp = withContext(Dispatchers.IO) {
-            runCatching {
-                when {
-                    url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true) -> {
-                        URL(url).openStream().use { BitmapFactory.decodeStream(it) }
-                    }
-                    url.startsWith("content://", ignoreCase = true) -> {
-                        context.contentResolver.openInputStream(Uri.parse(url))?.use {
-                            BitmapFactory.decodeStream(it)
-                        }
-                    }
-                    else -> {
-                        val f = java.io.File(url)
-                        if (f.exists()) BitmapFactory.decodeFile(f.absolutePath) else null
-                    }
-                }
-            }.getOrNull()
-        }
-    }
-    val mod = Modifier.size(size.dp).clip(CircleShape)
-    val imageBitmap = remember(bmp) {
-        bmp?.let {
-            try { it.asImageBitmap() } catch (e: Exception) { null }
-        }
-    }
-    if (imageBitmap != null) {
-        Image(imageBitmap, contentDescription = "avatar", modifier = mod, contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-    } else {
-        Box(mod.background(MaterialTheme.colorScheme.surfaceVariant))
-    }
 }
 
 // ---------- Root ----------
@@ -814,10 +778,36 @@ private fun ReposTab(vm: TrackViewModel) {
 }
 
 @Composable
+private fun SymbolActionButton(
+    icon: ImageVector,
+    contentDescription: String,
+    containerColor: Color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+    contentColor: Color = MaterialTheme.colorScheme.primary,
+    onClick: () -> Unit
+) {
+    Box(
+        Modifier
+            .size(42.dp)
+            .clip(CircleShape)
+            .background(containerColor)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Icon(
+            imageVector = icon,
+            contentDescription = contentDescription,
+            tint = contentColor,
+            modifier = Modifier.size(20.dp)
+        )
+    }
+}
+
+@Composable
 private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
     var showReleasesDialog by remember { mutableStateOf(false) }
     var showCollaboratorsDialog by remember { mutableStateOf(false) }
     var showActionsDialog by remember { mutableStateOf(false) }
+    var showPagePreviewDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(repo.fullName) {
         vm.loadReleasesForRepo(repo.fullName)
@@ -834,7 +824,7 @@ private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
     val pagesUrl = vm.pagesMap[repo.fullName]
 
     Tile(Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     repo.name,
@@ -861,52 +851,58 @@ private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
                 }
                 Text(date(repo.pushedAt), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+
+            // Clean Symbol-Only Action Buttons
             FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Button(onClick = { downloadRepo(ctx, repo) }) {
-                    Icon(Icons.Default.Download, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Download")
-                }
-                OutlinedButton(onClick = { shareRepo(ctx, repo) }) {
-                    Icon(Icons.Default.Share, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Share")
-                }
+                SymbolActionButton(
+                    icon = Icons.Default.Download,
+                    contentDescription = "Download",
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = Color.Black,
+                    onClick = { downloadRepo(ctx, repo) }
+                )
+                SymbolActionButton(
+                    icon = Icons.Default.Share,
+                    contentDescription = "Share",
+                    onClick = { shareRepo(ctx, repo) }
+                )
                 if (releases == null || releases.isNotEmpty()) {
-                    OutlinedButton(onClick = {
-                        vm.loadReleasesForRepo(repo.fullName)
-                        showReleasesDialog = true
-                    }) {
-                        Icon(Icons.Default.LocalOffer, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("View releases")
+                    SymbolActionButton(
+                        icon = Icons.Default.LocalOffer,
+                        contentDescription = "View releases",
+                        onClick = {
+                            vm.loadReleasesForRepo(repo.fullName)
+                            showReleasesDialog = true
+                        }
+                    )
+                }
+                SymbolActionButton(
+                    icon = Icons.Default.Group,
+                    contentDescription = "Collaborator",
+                    onClick = {
+                        vm.loadCollaboratorsForRepo(repo.fullName)
+                        showCollaboratorsDialog = true
                     }
-                }
-                OutlinedButton(onClick = {
-                    vm.loadCollaboratorsForRepo(repo.fullName)
-                    showCollaboratorsDialog = true
-                }) {
-                    Icon(Icons.Default.Group, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Collaborator")
-                }
-                OutlinedButton(onClick = {
-                    vm.loadActionsForRepo(repo.fullName)
-                    showActionsDialog = true
-                }) {
-                    Icon(Icons.Default.PlayCircle, null, Modifier.size(18.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Actions")
-                }
+                )
+                SymbolActionButton(
+                    icon = Icons.Default.PlayCircle,
+                    contentDescription = "Actions",
+                    onClick = {
+                        vm.loadActionsForRepo(repo.fullName)
+                        showActionsDialog = true
+                    }
+                )
                 if (!pagesUrl.isNullOrBlank()) {
-                    OutlinedButton(onClick = { openUrl(ctx, pagesUrl) }) {
-                        Icon(Icons.Default.Language, null, Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("View page")
-                    }
+                    SymbolActionButton(
+                        icon = Icons.Default.Language,
+                        contentDescription = "View page",
+                        containerColor = Brand.Coral.copy(alpha = 0.2f),
+                        contentColor = Brand.Coral,
+                        onClick = { showPagePreviewDialog = true }
+                    )
                 }
             }
         }
@@ -936,6 +932,14 @@ private fun RepoCard(repo: GhRepo, vm: TrackViewModel, ctx: Context) {
             runs = actions,
             isLoading = isActionsLoading,
             onDismiss = { showActionsDialog = false }
+        )
+    }
+
+    if (showPagePreviewDialog && !pagesUrl.isNullOrBlank()) {
+        PagePreviewDialog(
+            repoName = repo.name,
+            pageUrl = pagesUrl,
+            onDismiss = { showPagePreviewDialog = false }
         )
     }
 }
@@ -1341,6 +1345,74 @@ private fun ActionsDialog(
             }
         },
         confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close", fontWeight = FontWeight.Bold)
+            }
+        }
+    )
+}
+
+@Composable
+fun PagePreviewDialog(
+    repoName: String,
+    pageUrl: String,
+    onDismiss: () -> Unit
+) {
+    val ctx = LocalContext.current
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("$repoName Page", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text(pageUrl, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                IconButton(onClick = { openUrl(ctx, pageUrl) }) {
+                    Icon(Icons.Default.Fullscreen, contentDescription = "Full Screen", tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
+        text = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(350.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White)
+            ) {
+                AndroidView(
+                    factory = { context ->
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.useWideViewPort = true
+                            settings.loadWithOverviewMode = true
+                            webViewClient = WebViewClient()
+                            loadUrl(pageUrl)
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    onDismiss()
+                    openUrl(ctx, pageUrl)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary, contentColor = Color.Black)
+            ) {
+                Icon(Icons.Default.OpenInNew, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Full Screen", fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Close", fontWeight = FontWeight.Bold)
             }

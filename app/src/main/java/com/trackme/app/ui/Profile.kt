@@ -497,66 +497,6 @@ fun ProfileScreen(vm: TrackViewModel) {
             }
         }
 
-        // Test Crash Card (Firebase Crashlytics Setup Verification)
-        item {
-            Tile(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { throw RuntimeException("Test Crash") }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.BugReport,
-                                contentDescription = "Test Crash",
-                                tint = MaterialTheme.colorScheme.error,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                "Test Crash",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                            Text(
-                                "Firebase Crashlytics verification",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = { throw RuntimeException("Test Crash") },
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
-                            contentColor = MaterialTheme.colorScheme.error
-                        )
-                    ) {
-                        Text("Test Crash", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
         item {
             OutlinedButton(
                 onClick = { vm.refreshAccounts(force = true) },
@@ -664,15 +604,16 @@ fun ProfileScreen(vm: TrackViewModel) {
         )
     }
 
-    removing?.let { acc ->
+    val accToRemove = removing
+    if (accToRemove != null) {
         AlertDialog(
             onDismissRequest = { removing = null },
             title = { Text("Remove tag?") },
             text = {
-                Text("${acc.platform.label} @${acc.handle} and its saved daily history will be removed from your home page.")
+                Text("${accToRemove.platform.label} @${accToRemove.handle} and its saved daily history will be removed from your home page.")
             },
             confirmButton = {
-                TextButton(onClick = { vm.removeAccount(acc.id); removing = null }) {
+                TextButton(onClick = { vm.removeAccount(accToRemove.id); removing = null }) {
                     Text("Remove", color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -840,7 +781,8 @@ fun ProfileScreen(vm: TrackViewModel) {
         )
     }
 
-    vm.appUpdateMessage?.let { msg ->
+    val updateMsg = vm.appUpdateMessage
+    if (updateMsg != null) {
         AlertDialog(
             onDismissRequest = { vm.appUpdateMessage = null },
             icon = {
@@ -854,7 +796,7 @@ fun ProfileScreen(vm: TrackViewModel) {
             title = { Text("App Update Status", fontWeight = FontWeight.Bold) },
             text = {
                 Text(
-                    msg,
+                    updateMsg,
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

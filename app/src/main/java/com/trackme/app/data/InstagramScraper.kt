@@ -8,14 +8,17 @@ import java.util.regex.Pattern
 
 object InstagramScraper {
     suspend fun fetchCountsOnly(rawUrl: String): InstagramProfileStats? = withContext(Dispatchers.IO) {
+        val username = rawUrl.trim()
+            .substringBefore("?")
+            .substringBefore("#")
+            .trimEnd('/')
+            .substringAfterLast("/")
+            .trimStart('@')
+        if (username.isBlank()) return@withContext null
+        val targetUrl = "https://www.instagram.com/$username/"
         try {
-            // Normalize username from URL (e.g. https://instagram.com/username/)
-            val cleanUrl = rawUrl.trim().removeSuffix("/")
-            val username = cleanUrl.substringAfterLast("/")
-            val targetUrl = "https://www.instagram.com/$username/"
             val connection = (URL(targetUrl).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                // Using crawler user agent to get plain OpenGraph HTML directly
                 setRequestProperty(
                     "User-Agent",
                     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
@@ -23,29 +26,32 @@ object InstagramScraper {
                 connectTimeout = 8000
                 readTimeout = 8000
             }
-            val html = connection.inputStream.bufferedReader().use { reader ->
-                val sb = StringBuilder()
-                val buf = CharArray(8192)
-                while (sb.length < 600_000) {
-                    val n = reader.read(buf)
-                    if (n < 0) break
-                    sb.append(buf, 0, n)
+            try {
+                if (connection.responseCode !in 200..299) return@withContext null
+                val html = connection.inputStream.bufferedReader().use { reader ->
+                    val sb = StringBuilder()
+                    val buf = CharArray(8192)
+                    while (sb.length < 600_000) {
+                        val n = reader.read(buf)
+                        if (n < 0) break
+                        sb.append(buf, 0, n)
+                    }
+                    sb.toString()
                 }
-                sb.toString()
+                val counts = readCounts(html) ?: return@withContext null
+                InstagramProfileStats(
+                    username = username,
+                    profileUrl = targetUrl,
+                    followers = counts.first,
+                    following = counts.second,
+                    lastUpdated = System.currentTimeMillis()
+                )
+            } finally {
+                connection.disconnect()
             }
-            val counts = readCounts(html) ?: return@withContext null
-            InstagramProfileStats(
-                username = username,
-                profileUrl = targetUrl,
-                followers = counts.first,
-                following = counts.second,
-                lastUpdated = System.currentTimeMillis()
-            )
         } catch (e: Exception) {
             e.printStackTrace()
             null
-        } finally {
-            // connection may fail before it is assigned; close only when open
         }
     }
 

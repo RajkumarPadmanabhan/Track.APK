@@ -41,6 +41,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.random.Random
 import com.trackme.app.data.Platform
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,12 +77,74 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-private fun greeting(): String {
+private fun greetingWithSymbol(): Pair<String, String> {
     val h = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     return when {
-        h < 12 -> "Good morning"
-        h < 17 -> "Good afternoon"
-        else -> "Good evening"
+        h in 5..11 -> "Good morning" to "☀️"
+        h in 12..16 -> "Good afternoon" to "🌤️"
+        h in 17..21 -> "Good evening" to "🌇"
+        else -> "Good night" to "🌙"
+    }
+}
+
+private class RainDrop(
+    var x: Float,
+    var y: Float,
+    var length: Float,
+    var speed: Float,
+    var alpha: Float
+)
+
+@Composable
+fun RainEffect(
+    modifier: Modifier = Modifier,
+    dropCount: Int = 60
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "rain")
+    val time by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "rainTime"
+    )
+
+    val drops = remember {
+        List(dropCount) {
+            RainDrop(
+                x = Random.nextFloat(),
+                y = Random.nextFloat(),
+                length = 20f + Random.nextFloat() * 30f,
+                speed = 0.018f + Random.nextFloat() * 0.025f,
+                alpha = 0.35f + Random.nextFloat() * 0.5f
+            )
+        }
+    }
+
+    androidx.compose.foundation.Canvas(modifier = modifier) {
+        val w = size.width
+        val h = size.height
+        drops.forEach { drop ->
+            drop.y += drop.speed
+            if (drop.y > 1f) {
+                drop.y = 0f
+                drop.x = Random.nextFloat()
+            }
+            val startX = drop.x * w
+            val startY = drop.y * h
+            val endX = startX - drop.length * 0.2f
+            val endY = startY + drop.length
+
+            drawLine(
+                color = Color(0xFF80D8FF).copy(alpha = drop.alpha),
+                start = Offset(startX, startY),
+                end = Offset(endX, endY),
+                strokeWidth = 3f,
+                cap = StrokeCap.Round
+            )
+        }
     }
 }
 
@@ -102,152 +174,196 @@ fun HomeScreen(vm: TrackViewModel) {
 
     val yearContributions = remember(combined) { combined.values.sum() }
     val totalSubscribers = remember(accounts) { accounts.sumOf { it.count ?: 0L } }
+    val totalGrowth = yearContributions.toLong() + totalSubscribers
     var isGridView by remember { mutableStateOf(false) }
+    var isRaining by remember { mutableStateOf(false) }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        item { Header(session.name, session.avatarUrl, onProfile = { vm.screen = Screen.PROFILE }) }
-
-        item {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween,
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Today's snapshot", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Text(todayLabel(), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                if (vm.refreshing) {
-                    CircularProgressIndicator(Modifier.size(22.dp).padding(end = 0.dp), strokeWidth = 2.5.dp)
-                    Spacer(Modifier.width(12.dp))
-                } else if (accounts.isNotEmpty()) {
-                    IconButton(onClick = { vm.refreshAccounts(force = true) }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-                    }
-                }
-            }
-        }
-
-        vm.refreshNote?.let { note ->
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
             item {
-                Text(note, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                Header(
+                    name = session.name,
+                    avatarUrl = session.avatarUrl,
+                    isRaining = isRaining,
+                    onToggleRain = { isRaining = !isRaining },
+                    onProfile = { vm.screen = Screen.PROFILE }
+                )
             }
-        }
 
-        item { HeroTile(yearContributions, totalSubscribers, accounts.size, hasGit, combined) }
-
-        if (hasGit || combined.isNotEmpty()) {
-            if (vm.gitSkipDay != Days.key()) {
-                item { HeatmapTile(combined, onSkip = { vm.skipGitToday() }) }
-            }
-        }
-
-        item {
-            Row(
-                Modifier.fillMaxWidth().padding(top = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("Your platforms", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.width(10.dp))
-                Box(
-                    Modifier.clip(RoundedCornerShape(50)).background(Color.White).padding(horizontal = 9.dp, vertical = 2.dp),
-                ) { Text(accounts.size.toString(), color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
-                Spacer(Modifier.weight(1f))
+            item {
                 Row(
-                    Modifier
-                        .clip(RoundedCornerShape(50))
-                        .background(Color.White.copy(alpha = 0.12f))
-                        .clickable { isGridView = !isGridView }
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                    Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Icon(
-                        imageVector = if (isGridView) Icons.Default.GridView else Icons.Default.ViewList,
-                        contentDescription = "Toggle View Mode",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                    Text(
-                        if (isGridView) "Grid" else "List",
-                        color = Color.White,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-
-        if (accounts.isEmpty()) {
-            item { EmptyTags(onScan = { vm.openAdd() }) }
-        } else if (isGridView) {
-            items(accounts.distinctBy { it.id }.chunked(2)) { pair ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    pair.forEach { acc ->
-                        Box(Modifier.weight(1f)) {
-                            GridAccountCard(acc) { vm.openAccount(acc.id) }
+                    Column(Modifier.weight(1f)) {
+                        Text("Today's snapshot", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Text(todayLabel(), fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    if (vm.refreshing) {
+                        CircularProgressIndicator(Modifier.size(22.dp).padding(end = 0.dp), strokeWidth = 2.5.dp)
+                        Spacer(Modifier.width(12.dp))
+                    } else if (accounts.isNotEmpty()) {
+                        IconButton(onClick = { vm.refreshAccounts(force = true) }) {
+                            Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     }
-                    if (pair.size == 1) Spacer(Modifier.weight(1f))
                 }
             }
-        } else {
-            items(accounts.distinctBy { it.id }, key = { it.id }) { acc -> AccountCard(acc) { vm.openAccount(acc.id) } }
-        }
 
-        // --- Live News & Trends Section ---
-        if (newsFeed.isNotEmpty() || isNewsLoading) {
+            vm.refreshNote?.let { note ->
+                item {
+                    Text(note, fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                }
+            }
+
+            item { HeroTile(totalGrowth, accounts.size, combined) }
+
+            if (hasGit || combined.isNotEmpty()) {
+                if (vm.gitSkipDay != Days.key()) {
+                    item { HeatmapTile(combined, onSkip = { vm.skipGitToday() }) }
+                }
+            }
+
             item {
-                Spacer(modifier = Modifier.height(16.dp))
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    Modifier.fillMaxWidth().padding(top = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text(
-                        text = "⚡ Trends For You",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    if (isNewsLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = Brand.Coral
+                    Text("Your platforms", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(10.dp))
+                    Box(
+                        Modifier.clip(RoundedCornerShape(50)).background(Color.White).padding(horizontal = 9.dp, vertical = 2.dp),
+                    ) { Text(accounts.size.toString(), color = Color.Black, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+                    Spacer(Modifier.weight(1f))
+                    Row(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(Color.White.copy(alpha = 0.12f))
+                            .clickable { isGridView = !isGridView }
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isGridView) Icons.Default.GridView else Icons.Default.ViewList,
+                            contentDescription = "Toggle View Mode",
+                            tint = Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            if (isGridView) "Grid" else "List",
+                            color = Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
-                Spacer(modifier = Modifier.height(8.dp))
             }
 
-            items(newsFeed, key = { "news-" + it.id }) { post ->
-                NewsPostCard(post = post)
+            if (accounts.isEmpty()) {
+                item { EmptyTags(onScan = { vm.openAdd() }) }
+            } else if (isGridView) {
+                items(accounts.distinctBy { it.id }.chunked(2)) { pair ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        pair.forEach { acc ->
+                            Box(Modifier.weight(1f)) {
+                                GridAccountCard(acc) { vm.openAccount(acc.id) }
+                            }
+                        }
+                        if (pair.size == 1) Spacer(Modifier.weight(1f))
+                    }
+                }
+            } else {
+                items(accounts.distinctBy { it.id }, key = { it.id }) { acc -> AccountCard(acc) { vm.openAccount(acc.id) } }
             }
+
+            // --- Live News & Trends Section ---
+            if (newsFeed.isNotEmpty() || isNewsLoading) {
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 4.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "⚡ Trends For You",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        if (isNewsLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = Brand.Coral
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                items(newsFeed, key = { "news-" + it.id }) { post ->
+                    NewsPostCard(post = post)
+                }
+            }
+
+            item { Spacer(Modifier.height(8.dp)) }
         }
 
-        item { Spacer(Modifier.height(8.dp)) }
+        if (isRaining) {
+            RainEffect(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {}
+            )
+        }
     }
 }
 
-// ---------- Header ("Good morning, Alex") ----------
+// ---------- Header ("Good morning ☀️, Alex") ----------
 
 @Composable
-private fun Header(name: String, avatarUrl: String?, onProfile: () -> Unit) {
+private fun Header(
+    name: String,
+    avatarUrl: String?,
+    isRaining: Boolean,
+    onToggleRain: () -> Unit,
+    onProfile: () -> Unit
+) {
     val first = name.trim().substringBefore(" ").ifBlank { "there" }
+    val (greetingText, symbol) = greetingWithSymbol()
     Row(
         Modifier.fillMaxWidth().padding(top = 12.dp),
         verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(Modifier.weight(1f)) {
-            Text("${greeting()},", fontSize = 38.sp, lineHeight = 42.sp, fontWeight = FontWeight.Medium)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("$greetingText $symbol,", fontSize = 34.sp, lineHeight = 38.sp, fontWeight = FontWeight.Medium)
+                Spacer(Modifier.width(8.dp))
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(if (isRaining) Color(0xFF0288D1) else Color.White.copy(alpha = 0.12f))
+                        .clickable(onClick = onToggleRain)
+                        .padding(horizontal = 10.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        if (isRaining) "🌧️ Rain" else "🌧️ Weather",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isRaining) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             Text(
                 first,
                 fontSize = 38.sp,
@@ -265,20 +381,27 @@ private fun Header(name: String, avatarUrl: String?, onProfile: () -> Unit) {
 
 @Composable
 private fun HeroTile(
-    yearContributions: Int,
-    subscribers: Long,
+    totalGrowth: Long,
     tags: Int,
-    hasGit: Boolean,
     combined: Map<String, Int>,
 ) {
     var bgIndex by remember { mutableStateOf(0) }
     val bgColors = remember {
         listOf(
-            Brand.Sage,              // Default Sage green
-            Color(0xFFDDE6F8),       // Soft Sky Blue
-            Color(0xFFE8DDF8),       // Soft Lavender
-            Color(0xFFF8E7DD),       // Soft Peach
-            Color(0xFFDDF8EE),       // Soft Mint
+            Brand.Sage,              // Default Sage Green
+            Color(0xFFFFD1C1),       // Saturated Coral Sunset
+            Color(0xFFC2D9FF),       // Vibrant Sky Blue
+            Color(0xFFDEC2FF),       // Saturated Lavender
+            Color(0xFFB5F2D2),       // Saturated Mint
+            Color(0xFFFFEE9B),       // Saturated Golden Sun
+            Color(0xFFFFC2CE),       // Vibrant Berry Pink
+            Color(0xFFB8E8FC),       // Ocean Cyan
+            Color(0xFFDAF7A6),       // Vibrant Lime
+            Color(0xFFFFCBA4),       // Warm Apricot Tangerine
+            Color(0xFFC3B1E1),       // Deep Periwinkle
+            Color(0xFFA2E8DD),       // Vibrant Turquoise
+            Color(0xFFFFB3BA),       // Saturated Flamingo Pink
+            Color(0xFFBAE1FF),       // Deep Pastel Blue
         )
     }
     val currentBg = bgColors[bgIndex % bgColors.size]
@@ -301,16 +424,15 @@ private fun HeroTile(
         WaveformBars(bars, Modifier.fillMaxWidth().height(56.dp), ink, ink.copy(alpha = 0.16f))
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1.3f)) {
-                Text(compactCount(yearContributions.toLong()), fontSize = 54.sp, fontWeight = FontWeight.Medium, color = ink, lineHeight = 56.sp)
+            Column(Modifier.weight(1.2f)) {
+                Text(compactCount(totalGrowth), fontSize = 52.sp, fontWeight = FontWeight.Medium, color = ink, lineHeight = 54.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    if (hasGit) "Contributions this year" else "Add GitHub or GitLab",
+                    "Contributions this year",
                     fontSize = 12.sp, color = ink.copy(alpha = 0.6f),
                 )
             }
-            HeroSmall(compactCount(subscribers), "Subscribers", Modifier.weight(1f))
-            HeroSmall(tags.toString(), "Tags", Modifier.weight(0.7f))
+            HeroSmall(tags.toString(), "Tags", Modifier.weight(0.4f))
         }
     }
 }
@@ -452,7 +574,7 @@ private fun AccountCard(acc: TrackedAccount, onClick: () -> Unit) {
         ) {
             Column(Modifier.fillMaxSize().padding(start = 18.dp, end = 18.dp, top = 16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    PlatformBadge(acc.platform, 44.dp)
+                    AccountAvatar(acc, 44.dp)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -477,39 +599,11 @@ private fun AccountCard(acc: TrackedAccount, onClick: () -> Unit) {
                     WaveformBars(m.spark, Modifier.width(92.dp).height(44.dp), ink, ink.copy(alpha = 0.18f))
                 }
             }
-            // Right of the notch: Views bar for YouTube & secondary numbers
-            Column(
-                Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 14.dp),
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(6.dp),
+            // Right of the notch: secondary numbers (Videos, Repos, Following)
+            Row(
+                Modifier.align(Alignment.BottomEnd).padding(end = 18.dp, bottom = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(18.dp),
             ) {
-                if (acc.platform == Platform.YOUTUBE) {
-                    val viewsStr = acc.extras.firstOrNull { it.first == "Views" }?.second
-                    if (!viewsStr.isNullOrBlank()) {
-                        Box(
-                            Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(ink.copy(alpha = 0.12f))
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Default.RemoveRedEye,
-                                    contentDescription = null,
-                                    tint = ink,
-                                    modifier = Modifier.size(12.dp),
-                                )
-                                Spacer(Modifier.width(4.dp))
-                                Text(
-                                    "$viewsStr views",
-                                    color = ink,
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                )
-                            }
-                        }
-                    }
-                }
                 m.extras.forEach { (label, value) ->
                     Column(horizontalAlignment = Alignment.End) {
                         Text(value, color = ink, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 1)
@@ -572,7 +666,7 @@ private fun GridAccountCard(acc: TrackedAccount, onClick: () -> Unit) {
             verticalArrangement = Arrangement.SpaceBetween
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                PlatformBadge(acc.platform, 36.dp)
+                AccountAvatar(acc, 36.dp)
                 Spacer(Modifier.width(8.dp))
                 Column(Modifier.weight(1f)) {
                     Text(
