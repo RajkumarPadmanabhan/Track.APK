@@ -91,6 +91,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -214,6 +215,9 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
     val showDetailNav = vm.screen == Screen.DETAIL && vm.user != null &&
         vm.platform.fullScan && !vm.loading && vm.error == null
 
+    val tourMarks = remember { TourMarks() }
+    CompositionLocalProvider(LocalTourMarks provides tourMarks) {
+    Box(Modifier.fillMaxSize()) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = {
@@ -244,6 +248,11 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
     }
 
     if (vm.showAdd) AddTagSheet(vm)
+    if (!vm.walkthroughDone && vm.screen == Screen.HOME && !vm.showAdd) {
+        FirstWalkthrough(onDone = { vm.finishWalkthrough() })
+    }
+    }
+    }
 }
 
 // ---------- Tag detail (opened from a home card) ----------
@@ -693,10 +702,12 @@ private fun BigTile(label: String, value: String, sub: String?, modifier: Modifi
             Text(label, fontSize = 14.sp)
             Text(
                 value,
-                fontSize = 38.sp,
+                fontSize = if (value.length > 7) 26.sp else 34.sp,
                 fontWeight = FontWeight.ExtraBold,
                 color = MaterialTheme.colorScheme.primary,
                 maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 sub ?: "",

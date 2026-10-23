@@ -431,9 +431,10 @@ fun HomeNav(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        NavItem(Icons.Default.Home, "Home", selected == Screen.HOME, onHome)
+        NavItem(Icons.Default.Home, "Home", selected == Screen.HOME, onHome, tourKey = "home")
         Box(
             Modifier
+                .markTour("scan")
                 .size(54.dp)
                 .clip(CircleShape)
                 .background(Color.White)
@@ -464,15 +465,22 @@ fun HomeNav(
         ) {
             Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan a tag", tint = Color.Black)
         }
-        NavItem(Icons.Default.Person, "Profile", selected == Screen.PROFILE, onProfile)
+        NavItem(Icons.Default.Person, "Profile", selected == Screen.PROFILE, onProfile, tourKey = "navprofile")
     }
 }
 
 @Composable
-private fun NavItem(icon: ImageVector, label: String, selected: Boolean, onClick: () -> Unit) {
+private fun NavItem(
+    icon: ImageVector,
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    tourKey: String? = null,
+) {
     val tint = if (selected) Brand.Coral else Color(0xFF8A8A8A)
     Row(
         Modifier
+            .then(if (tourKey != null) Modifier.markTour(tourKey) else Modifier)
             .clip(RoundedCornerShape(50))
             .clickable { onClick() }
             .padding(horizontal = 18.dp, vertical = 10.dp),

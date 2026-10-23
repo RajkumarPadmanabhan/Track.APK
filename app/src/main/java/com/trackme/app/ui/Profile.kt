@@ -33,6 +33,8 @@ import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
@@ -112,6 +114,12 @@ fun ProfileScreen(vm: TrackViewModel) {
     var confirmSignOut by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showAboutDialog by remember { mutableStateOf(false) }
+    val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) vm.exportBackup(context, uri)
+    }
+    val openBackup = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importBackup(context, uri)
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -502,6 +510,30 @@ fun ProfileScreen(vm: TrackViewModel) {
 
         item {
             OutlinedButton(
+                onClick = { saveBackup.launch("TrackMe-backup.zip") },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(50),
+            ) {
+                Icon(Icons.Default.Download, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Download backup")
+            }
+        }
+
+        item {
+            OutlinedButton(
+                onClick = { openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(50),
+            ) {
+                Icon(Icons.Default.Upload, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Restore backup")
+            }
+        }
+
+        item {
+            OutlinedButton(
                 onClick = { confirmSignOut = true },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(50),
@@ -619,7 +651,7 @@ fun ProfileScreen(vm: TrackViewModel) {
         AlertDialog(
             onDismissRequest = { confirmSignOut = false },
             title = { Text("Sign out?") },
-            text = { Text("Your tags stay saved on this device. Sign in again with the same email to see them.") },
+            text = { Text("Your tags stay on this phone. Download a backup first if you want them after you sign in again.") },
             confirmButton = {
                 TextButton(onClick = { confirmSignOut = false; vm.signOut() }) { Text("Sign out") }
             },

@@ -30,6 +30,7 @@ import com.trackme.app.data.nameFromLink
 import com.trackme.app.data.newAccount
 import com.trackme.app.data.NewsDataRepository
 import com.trackme.app.data.UploadedFile
+import com.trackme.app.data.Backup
 import com.trackme.app.data.DesktopLink
 import com.trackme.app.data.compactCount
 import com.trackme.app.data.formatBytes
@@ -451,6 +452,67 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         screen = Screen.HOME
         refreshNote = null
         return true
+    }
+
+    var walkthroughDone by mutableStateOf(prefs.getBoolean("walkthrough_done", false))
+        private set
+
+    fun finishWalkthrough() {
+        walkthroughDone = true
+        prefs.edit().putBoolean("walkthrough_done", true).apply()
+    }
+
+    fun exportBackup(context: Context, dest: android.net.Uri) {
+        val email = session?.email ?: return
+        viewModelScope.launch {
+            val ok = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openOutputStream(dest)?.use { out ->
+                        Backup.write(context.applicationContext, prefs, email, out)
+                    } != null
+                }
+            } catch (_: Throwable) {
+                false
+            }
+            android.widget.Toast.makeText(
+                context,
+                if (ok) "Backup saved" else "Couldn't save the backup.",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+        }
+    }
+
+    fun importBackup(context: Context, uri: android.net.Uri) {
+        val email = session?.email ?: return
+        viewModelScope.launch {
+            val restored = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    Backup.read(context.applicationContext, uri)
+                }
+            } catch (_: Throwable) {
+                null
+            }
+            if (restored == null) {
+                android.widget.Toast.makeText(context, "That file is not a Track backup.", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val topics = restored.newsTopics.split(",")
+                .map { it.trim() }
+                .filter { id -> NewsTopics.all.any { it.id == id } }
+                .take(NewsTopics.MAX)
+            prefs.edit()
+                .putString("accounts_$email", restored.accountsJson)
+                .putString("files_$email", restored.filesJson)
+                .putString("news_topics", topics.joinToString(","))
+                .apply()
+            newsTopicIds = topics
+            com.trackme.app.ui.ThemeColorOption.entries
+                .firstOrNull { it.name == restored.theme }
+                ?.let { updateThemeColor(it) }
+            accounts = Store.loadAccounts(prefs, email)
+            uploadedFiles = UploadedFileStore.load(prefs, email)
+            android.widget.Toast.makeText(context, "Backup restored", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     fun signOut() {

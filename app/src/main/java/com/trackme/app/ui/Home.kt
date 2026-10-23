@@ -236,7 +236,7 @@ fun HomeScreen(vm: TrackViewModel) {
                         CircularProgressIndicator(Modifier.size(22.dp).padding(end = 0.dp), strokeWidth = 2.5.dp)
                         Spacer(Modifier.width(12.dp))
                     } else if (accounts.isNotEmpty()) {
-                        IconButton(onClick = { vm.refreshAccounts(force = true) }) {
+                        IconButton(onClick = { vm.refreshAccounts(force = true) }, modifier = Modifier.markTour("refresh")) {
                             Icon(Icons.Default.Refresh, contentDescription = "Refresh")
                         }
                     }
@@ -265,7 +265,7 @@ fun HomeScreen(vm: TrackViewModel) {
                 }
                 item {
                     Row(
-                        Modifier.fillMaxWidth().padding(top = 4.dp),
+                        Modifier.fillMaxWidth().padding(top = 4.dp).markTour("apps"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text("Apps", fontSize = 22.sp, fontWeight = FontWeight.Bold)
@@ -343,6 +343,7 @@ fun HomeScreen(vm: TrackViewModel) {
                     Spacer(Modifier.weight(1f))
                     Row(
                         Modifier
+                            .markTour("layout")
                             .clip(RoundedCornerShape(50))
                             .background(Color.White.copy(alpha = 0.12f))
                             .clickable { isGridView = !isGridView }
@@ -616,7 +617,7 @@ private fun Header(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        UserAvatar(name, avatarUrl, 52.dp, onClick = onProfile)
+        UserAvatar(name, avatarUrl, 52.dp, modifier = Modifier.markTour("avatar"), onClick = onProfile)
     }
 }
 
@@ -662,6 +663,7 @@ private fun HeroTile(
             .fillMaxWidth()
             .clip(RoundedCornerShape(32.dp))
             .background(currentBg)
+            .markTour("activity")
             .clickable {
                 if (monkeyOn) jumpToken++ else bgIndex = (bgIndex + 1) % bgColors.size
             }
@@ -683,21 +685,31 @@ private fun HeroTile(
         Row(verticalAlignment = Alignment.Bottom) {
             Column(
                 Modifier
-                    .weight(1.2f)
+                    .weight(1.6f)
+                    .markTour("contributions")
                     .then(if (!monkeyOn) Modifier.clickable { monkeyOn = true } else Modifier),
             ) {
-                Text(compactCount(totalGrowth), fontSize = 52.sp, fontWeight = FontWeight.Medium, color = ink, lineHeight = 54.sp)
+                val countText = compactCount(totalGrowth)
+                Text(
+                    countText,
+                    fontSize = if (countText.length >= 7) 34.sp else 44.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = ink,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis,
+                )
                 Spacer(Modifier.height(6.dp))
                 Text(
                     "Contributions this year",
                     fontSize = 12.sp, color = ink.copy(alpha = 0.6f),
                 )
             }
-            HeroSmall(tags.toString(), "Tags", Modifier.weight(0.4f))
+            HeroSmall(tags.toString(), "Tags", Modifier.weight(0.45f))
             HeroSmall(
                 value = filesSize,
                 label = "Size",
-                modifier = Modifier.weight(0.6f),
+                modifier = Modifier.weight(0.7f),
             )
         }
     }
@@ -722,16 +734,25 @@ private class MonkeyWorld {
     }
 
     fun jump() {
-        if (!out && y <= 1f) vy = -860f
+        if (!out && y <= 1f) vy = 680f
     }
 
-    fun step(dt: Float, width: Float, ground: Float) {
+    fun step(dt: Float, width: Float, ceiling: Float) {
         if (out || width < 2f) return
-        vy += 2400f * dt
-        y = (y + vy * dt).coerceAtLeast(0f)
-        if (y == 0f && vy > 0f) vy = 0f
-        speed = (speed + 18f * dt).coerceAtMost(620f)
-        val stepX = speed * dt
+        val frame = dt.coerceIn(0f, 0.032f)
+        vy -= 2200f * frame
+        y += vy * frame
+        val maxY = (ceiling - 72f).coerceIn(56f, 150f)
+        if (y > maxY) {
+            y = maxY
+            if (vy > 0f) vy = 0f
+        }
+        if (y <= 0f) {
+            y = 0f
+            if (vy < 0f) vy = 0f
+        }
+        speed = (speed + 18f * frame).coerceAtMost(620f)
+        val stepX = speed * frame
         for (b in blocks) b[0] -= stepX
         blocks.removeAll { it[0] < -40f }
         val last = blocks.maxOfOrNull { it[0] } ?: 0f
@@ -766,7 +787,7 @@ private fun MonkeyRun(jumpToken: Int, ink: Color, onOut: () -> Unit, modifier: M
         var last = 0L
         while (!world.out) {
             withFrameNanos { t ->
-                if (last != 0L && !world.out) world.step((t - last) / 1_000_000_000f, width, height)
+                if (last != 0L && !world.out) world.step((t - last) / 1_000_000_000f, width, height - 8f)
                 last = t
                 tick++
             }
@@ -806,7 +827,15 @@ private fun MonkeyRun(jumpToken: Int, ink: Color, onOut: () -> Unit, modifier: M
 @Composable
 private fun HeroSmall(value: String, label: String, modifier: Modifier) {
     Column(modifier) {
-        Text(value, fontSize = 26.sp, color = Brand.Ink.copy(alpha = 0.45f), fontWeight = FontWeight.Medium, maxLines = 1)
+        Text(
+            value,
+            fontSize = if (value.length > 5) 18.sp else 24.sp,
+            color = Brand.Ink.copy(alpha = 0.45f),
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            softWrap = false,
+            overflow = TextOverflow.Ellipsis,
+        )
         Spacer(Modifier.height(4.dp))
         Text(label, fontSize = 11.sp, color = Brand.Ink.copy(alpha = 0.55f), maxLines = 1)
     }
