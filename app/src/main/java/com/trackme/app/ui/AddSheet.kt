@@ -211,7 +211,8 @@ fun AddTagSheet(vm: TrackViewModel) {
             if (vm.makeAsApp) {
                 AppDraftPreview(
                     vm.appName.ifBlank { nameFromLink(vm.input).ifBlank { "App" } },
-                    (detectPlatform(vm.input) ?: p).cardColor,
+                    vm.input,
+                    detectPlatform(vm.input) ?: p,
                 )
                 Button(
                     onClick = {
@@ -310,15 +311,9 @@ fun AddTagSheet(vm: TrackViewModel) {
 }
 
 @Composable
-private fun AppDraftPreview(name: String, color: Color) {
-    val letter = name.trim().firstOrNull()?.uppercase() ?: "A"
+private fun AppDraftPreview(name: String, url: String, platform: Platform) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-        Box(
-            Modifier.size(72.dp).clip(RoundedCornerShape(20.dp)).background(color),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(letter, color = Color.Black, fontSize = 30.sp, fontWeight = FontWeight.Bold)
-        }
+        AppLogo(appLogoKind(url, platform), 72.dp)
         Spacer(Modifier.height(8.dp))
         Text(name.ifBlank { "App" }, fontWeight = FontWeight.SemiBold)
     }

@@ -3,6 +3,7 @@ package com.trackme.app.ui
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
@@ -54,6 +55,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.zIndex
@@ -77,6 +80,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -174,7 +178,7 @@ private fun todayLabel(): String =
 fun HomeScreen(vm: TrackViewModel) {
     val accounts = vm.accounts
     val platformAccounts = accounts.filter { !it.asApp }
-    val appAccounts = accounts.filter { !it.isHidden }
+    val appAccounts = accounts.filter { it.asApp && !it.isHidden }
     val session = vm.session ?: return
     val combined = remember(accounts) { combinedActivity(accounts.filter { !it.isHidden }) }
     val streak = remember(combined) { computeStreak(combined) }
@@ -247,7 +251,6 @@ fun HomeScreen(vm: TrackViewModel) {
                     tags = platformAccounts.size,
                     combined = combined,
                     filesSize = com.trackme.app.data.formatBytes(vm.totalUploadedBytes),
-                    onFiles = { vm.screen = Screen.FILES },
                 )
             }
 
@@ -299,7 +302,8 @@ fun HomeScreen(vm: TrackViewModel) {
                                 val label = acc.appName?.ifBlank { null } ?: acc.name.ifBlank { acc.handle.ifBlank { acc.platform.label } }
                                 AppIcon(
                                     name = label,
-                                    color = acc.platform.cardColor,
+                                    url = acc.url,
+                                    platform = acc.platform,
                                     onClick = {
                                         if (acc.asApp) {
                                             val opened = runCatching {
@@ -425,21 +429,18 @@ fun HomeScreen(vm: TrackViewModel) {
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun AppIcon(name: String, color: Color, onClick: () -> Unit, onLongClick: () -> Unit) {
-    val letter = name.trim().firstOrNull()?.uppercase() ?: "A"
+private fun AppIcon(
+    name: String,
+    url: String,
+    platform: com.trackme.app.data.Platform,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     Column(
         modifier = Modifier.width(76.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .size(62.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(color),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text(letter, color = Color.Black, fontSize = 26.sp, fontWeight = FontWeight.Bold)
-        }
+        AppLogo(appLogoKind(url, platform), 62.dp)
         Spacer(Modifier.height(6.dp))
         Text(
             name,
@@ -627,25 +628,26 @@ private fun HeroTile(
     tags: Int,
     combined: Map<String, Int>,
     filesSize: String = "0 B",
-    onFiles: () -> Unit = {},
 ) {
-    var bgIndex by remember { mutableStateOf(0) }
+    var bgIndex by remember { mutableIntStateOf(0) }
+    var monkeyOn by remember { mutableStateOf(false) }
+    var jumpToken by remember { mutableIntStateOf(0) }
     val bgColors = remember {
         listOf(
-            Brand.Sage,              // Default Sage Green
-            Color(0xFFFFD1C1),       // Saturated Coral Sunset
-            Color(0xFFC2D9FF),       // Vibrant Sky Blue
-            Color(0xFFDEC2FF),       // Saturated Lavender
-            Color(0xFFB5F2D2),       // Saturated Mint
-            Color(0xFFFFEE9B),       // Saturated Golden Sun
-            Color(0xFFFFC2CE),       // Vibrant Berry Pink
-            Color(0xFFB8E8FC),       // Ocean Cyan
-            Color(0xFFDAF7A6),       // Vibrant Lime
-            Color(0xFFFFCBA4),       // Warm Apricot Tangerine
-            Color(0xFFC3B1E1),       // Deep Periwinkle
-            Color(0xFFA2E8DD),       // Vibrant Turquoise
-            Color(0xFFFFB3BA),       // Saturated Flamingo Pink
-            Color(0xFFBAE1FF),       // Deep Pastel Blue
+            Color(0xFFE8EDE0),
+            Color(0xFFFFE4D8),
+            Color(0xFFD7E8FF),
+            Color(0xFFEBD8FF),
+            Color(0xFFCFFAE4),
+            Color(0xFFFFF6C2),
+            Color(0xFFFFD5DE),
+            Color(0xFFD2F3FF),
+            Color(0xFFE7FFC4),
+            Color(0xFFFFDCC4),
+            Color(0xFFD9CBF2),
+            Color(0xFFC4F6EE),
+            Color(0xFFFFCDD2),
+            Color(0xFFD4EDFF),
         )
     }
     val currentBg = bgColors[bgIndex % bgColors.size]
@@ -660,15 +662,30 @@ private fun HeroTile(
             .fillMaxWidth()
             .clip(RoundedCornerShape(32.dp))
             .background(currentBg)
-            .clickable { bgIndex = (bgIndex + 1) % bgColors.size }
+            .clickable {
+                if (monkeyOn) jumpToken++ else bgIndex = (bgIndex + 1) % bgColors.size
+            }
             .padding(20.dp),
     ) {
         Text("Activity", fontSize = 44.sp, fontWeight = FontWeight.Medium, color = ink, letterSpacing = (-1).sp)
         Spacer(Modifier.height(10.dp))
-        WaveformBars(bars, Modifier.fillMaxWidth().height(56.dp), ink, ink.copy(alpha = 0.16f))
+        if (monkeyOn) {
+            MonkeyRun(
+                jumpToken = jumpToken,
+                ink = ink,
+                onOut = { monkeyOn = false },
+                modifier = Modifier.fillMaxWidth().height(96.dp),
+            )
+        } else {
+            WaveformBars(bars, Modifier.fillMaxWidth().height(56.dp), ink, ink.copy(alpha = 0.16f))
+        }
         Spacer(Modifier.height(14.dp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Column(Modifier.weight(1.2f)) {
+            Column(
+                Modifier
+                    .weight(1.2f)
+                    .then(if (!monkeyOn) Modifier.clickable { monkeyOn = true } else Modifier),
+            ) {
                 Text(compactCount(totalGrowth), fontSize = 52.sp, fontWeight = FontWeight.Medium, color = ink, lineHeight = 54.sp)
                 Spacer(Modifier.height(6.dp))
                 Text(
@@ -680,9 +697,109 @@ private fun HeroTile(
             HeroSmall(
                 value = filesSize,
                 label = "Size",
-                modifier = Modifier.weight(0.6f).clickable { onFiles() },
+                modifier = Modifier.weight(0.6f),
             )
         }
+    }
+}
+
+private class MonkeyWorld {
+    var y = 0f
+    var vy = 0f
+    var speed = 340f
+    var passed = 0f
+    val blocks = ArrayList<FloatArray>()
+    var out = false
+
+    fun reset() {
+        y = 0f
+        vy = 0f
+        speed = 340f
+        passed = 0f
+        blocks.clear()
+        blocks.add(floatArrayOf(640f, 36f))
+        out = false
+    }
+
+    fun jump() {
+        if (!out && y <= 1f) vy = -860f
+    }
+
+    fun step(dt: Float, width: Float, ground: Float) {
+        if (out || width < 2f) return
+        vy += 2400f * dt
+        y = (y + vy * dt).coerceAtLeast(0f)
+        if (y == 0f && vy > 0f) vy = 0f
+        speed = (speed + 18f * dt).coerceAtMost(620f)
+        val stepX = speed * dt
+        for (b in blocks) b[0] -= stepX
+        blocks.removeAll { it[0] < -40f }
+        val last = blocks.maxOfOrNull { it[0] } ?: 0f
+        if (last < width * 0.55f) {
+            val gap = 220f + (width * 0.15f * ((passed.toInt() % 3) + 1) * 0.15f)
+            blocks.add(floatArrayOf(last + gap + 180f, if (blocks.size % 2 == 0) 34f else 52f))
+        }
+        val monkeyLeft = 30f
+        val monkeyRight = 60f
+        for (b in blocks) {
+            val hitX = b[0] < monkeyRight && b[0] + 18f > monkeyLeft
+            val hitY = y < b[1] - 6f
+            if (hitX && hitY) {
+                out = true
+                return
+            }
+        }
+        passed += dt
+    }
+}
+
+@Composable
+private fun MonkeyRun(jumpToken: Int, ink: Color, onOut: () -> Unit, modifier: Modifier) {
+    val world = remember { MonkeyWorld() }
+    var tick by remember { mutableIntStateOf(0) }
+    var width by remember { mutableFloatStateOf(0f) }
+    var height by remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(Unit) { world.reset() }
+    LaunchedEffect(jumpToken) { if (jumpToken > 0) world.jump() }
+    LaunchedEffect(width, height) {
+        if (width < 2f || height < 2f) return@LaunchedEffect
+        var last = 0L
+        while (!world.out) {
+            withFrameNanos { t ->
+                if (last != 0L && !world.out) world.step((t - last) / 1_000_000_000f, width, height)
+                last = t
+                tick++
+            }
+        }
+        onOut()
+    }
+    Canvas(
+        modifier.onSizeChanged {
+            width = it.width.toFloat()
+            height = it.height.toFloat()
+        },
+    ) {
+        val ground = size.height - 8f
+        drawLine(ink.copy(alpha = 0.35f), androidx.compose.ui.geometry.Offset(0f, ground), androidx.compose.ui.geometry.Offset(size.width, ground), 3f)
+        val seen = tick
+        if (seen < 0) return@Canvas
+        for (b in world.blocks) {
+            drawRoundRect(
+                ink,
+                androidx.compose.ui.geometry.Offset(b[0], ground - b[1]),
+                androidx.compose.ui.geometry.Size(16f, b[1]),
+                androidx.compose.ui.geometry.CornerRadius(5f, 5f),
+            )
+        }
+        val base = ground - world.y
+        val mx = 28f
+        drawCircle(Color(0xFF8D5524), 7f, androidx.compose.ui.geometry.Offset(mx + 8f, base - 46f))
+        drawCircle(Color(0xFF8D5524), 7f, androidx.compose.ui.geometry.Offset(mx + 24f, base - 46f))
+        drawCircle(Color(0xFFC68642), 16f, androidx.compose.ui.geometry.Offset(mx + 18f, base - 22f))
+        drawCircle(Color(0xFFE8B86D), 13f, androidx.compose.ui.geometry.Offset(mx + 24f, base - 40f))
+        drawCircle(ink, 2.1f, androidx.compose.ui.geometry.Offset(mx + 28f, base - 42f))
+        drawCircle(Color(0xFF8D5524), 4f, androidx.compose.ui.geometry.Offset(mx + 4f, base - 8f))
+        drawCircle(Color(0xFF8D5524), 4f, androidx.compose.ui.geometry.Offset(mx + 22f, base - 8f))
     }
 }
 
@@ -893,7 +1010,7 @@ private fun AccountCard(acc: TrackedAccount, onToggleVisibility: () -> Unit, onC
                             Spacer(Modifier.height(4.dp))
                             Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
                         }
-                        WaveformBars(m.spark, Modifier.width(92.dp).height(44.dp), ink, ink.copy(alpha = 0.18f))
+                        CountChart(m.spark, Modifier.width(132.dp).height(72.dp), ink)
                     }
                 }
             }

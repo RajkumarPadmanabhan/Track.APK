@@ -355,6 +355,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         query = ""
         appName = ""
         appNameTouched = false
+        makeAsApp = false
     }
 
     var makeAsApp by mutableStateOf(false)
@@ -389,7 +390,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 session?.let { UploadedFileStore.save(prefs, it.email, uploadedFiles) }
                 android.widget.Toast.makeText(
                     context,
-                    "Saved. The file was not opened or run.",
+                    "File uploaded successfully",
                     android.widget.Toast.LENGTH_SHORT,
                 ).show()
             } catch (e: FileStoreException) {
@@ -453,6 +454,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun signOut() {
+        desktopNote = null
         stopDesktop()
         Store.saveUser(prefs, null)
         session = null
@@ -467,12 +469,16 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     var desktopUrl by mutableStateOf<String?>(null)
     var desktopCode by mutableStateOf<String?>(null)
     var desktopError by mutableStateOf<String?>(null)
+    var desktopNote by mutableStateOf<String?>(null)
+        private set
+    private var desktopAddJob: Job? = null
 
     fun startDesktop() {
         val url = DesktopLink.start(object : DesktopLink.Bridge {
             override fun stateJson(): String = desktopState()
             override fun act(type: String, id: String) = desktopAct(type, id)
             override fun file(id: String): File? = desktopFile(id)
+            override fun windowsApp(): File? = windowsInstaller()
         })
         desktopUrl = url
         desktopCode = DesktopLink.code
@@ -500,6 +506,13 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 "files" -> screen = Screen.FILES
                 "open" -> if (id.isNotBlank()) openAccount(id)
                 "refresh" -> refreshAccounts(true)
+                "scan" -> addFromDesktop(id)
+                "theme" -> {
+                    val option = com.trackme.app.ui.ThemeColorOption.entries.firstOrNull {
+                        it.name.equals(id, ignoreCase = true)
+                    }
+                    if (option != null) updateThemeColor(option)
+                }
             }
         }
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run.run() else {
@@ -559,7 +572,61 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             files.put(JSONObject().put("id", file.id).put("name", file.displayName).put("size", formatBytes(file.originalSize)))
         }
         root.put("files", files)
+        root.put("alive", true)
+        root.put("theme", themeColorName)
+        if (!desktopNote.isNullOrBlank()) root.put("note", desktopNote)
         return root.toString()
+    }
+
+    /** A link typed on the computer is scanned and saved on this phone. */
+    private fun addFromDesktop(raw: String) {
+        if (session == null) {
+            desktopNote = "Sign in on the phone first"
+            return
+        }
+        val text = raw.trim()
+        val found = detectPlatform(text)
+        if (found == null) {
+            desktopNote = "Paste a profile link this app can read"
+            return
+        }
+        platform = found
+        resetScan()
+        input = text
+        desktopNote = "Reading that link…"
+        scan()
+        desktopAddJob?.cancel()
+        desktopAddJob = viewModelScope.launch {
+            var spins = 0
+            while (loading && spins < 80) {
+                kotlinx.coroutines.delay(250)
+                spins++
+            }
+            if (error != null && currentDraft() == null) {
+                desktopNote = error
+                return@launch
+            }
+            val draft = currentDraft()
+            if (draft == null) {
+                desktopNote = previewNote ?: error ?: "Couldn't read that link"
+                return@launch
+            }
+            val pending = previewNote
+            if (addDraft()) desktopNote = pending ?: "Added on the phone"
+            else desktopNote = error ?: "Couldn't add that link"
+        }
+    }
+
+    private fun windowsInstaller(): File? {
+        return try {
+            val out = File(getApplication<Application>().cacheDir, "TrackWindows.cmd")
+            getApplication<Application>().assets.open("TrackWindows.cmd").use { input ->
+                out.outputStream().use { input.copyTo(it) }
+            }
+            out.takeIf { it.length() > 0L }
+        } catch (_: Exception) {
+            null
+        }
     }
 
     fun updateName(name: String) {

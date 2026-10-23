@@ -20,7 +20,9 @@ import java.net.Socket
 import java.net.URLDecoder
 import java.security.SecureRandom
 import java.text.SimpleDateFormat
+import java.util.Collections
 import java.util.Date
+import java.util.HashSet
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -44,6 +46,7 @@ object DesktopLink {
     private var token: String = ""
     private var pairCode: String = ""
     private val pool = Executors.newCachedThreadPool()
+    private val liveSockets = Collections.synchronizedSet(HashSet<Socket>())
 
     private val _clients = MutableStateFlow<List<DesktopClient>>(emptyList())
     val clients: StateFlow<List<DesktopClient>> = _clients.asStateFlow()
@@ -57,6 +60,7 @@ object DesktopLink {
         fun stateJson(): String
         fun act(type: String, id: String)
         fun file(id: String): File?
+        fun windowsApp(): File?
     }
 
     @Volatile
@@ -120,6 +124,17 @@ object DesktopLink {
 
     fun stop() {
         running.set(false)
+        token = ""
+        pairCode = ""
+        bridge = null
+        val open = liveSockets.toList()
+        liveSockets.clear()
+        for (client in open) {
+            try {
+                client.close()
+            } catch (_: Exception) {
+            }
+        }
         try {
             socket?.close()
         } catch (_: Exception) {
@@ -127,9 +142,6 @@ object DesktopLink {
         socket = null
         linkUrl = null
         code = null
-        token = ""
-        pairCode = ""
-        bridge = null
         _clients.value = emptyList()
     }
 
@@ -160,6 +172,7 @@ object DesktopLink {
 
     private fun handle(client: Socket) {
         client.soTimeout = 8000
+        liveSockets.add(client)
         try {
             val input = BufferedInputStream(client.getInputStream())
             val output = BufferedOutputStream(client.getOutputStream())
@@ -191,8 +204,19 @@ object DesktopLink {
                 }
                 method == "GET" && path == "/api/state" && ok -> {
                     noteClient(client, head)
-                    val body = bridge?.stateJson() ?: "{}"
+                    val body = bridge?.stateJson() ?: "{\"alive\":false}"
                     writeText(output, 200, "application/json; charset=utf-8", body)
+                }
+                method == "GET" && path == "/api/state" -> {
+                    writeText(output, 401, "application/json; charset=utf-8", "{\"alive\":false}")
+                }
+                method == "GET" && path == "/TrackWindows.cmd" && ok -> {
+                    val file = bridge?.windowsApp()
+                    if (file == null || !file.exists() || file.length() <= 0L) {
+                        writeText(output, 404, "text/plain; charset=utf-8", "TrackWindows.cmd is not in this build.")
+                    } else {
+                        writeDownload(output, file, "application/octet-stream", "TrackWindows.cmd")
+                    }
                 }
                 method == "POST" && path == "/api/act" && ok -> {
                     val len = contentLength(head).coerceIn(0, 8000)
@@ -203,7 +227,7 @@ object DesktopLink {
                     if (type.isNotBlank()) bridge?.act(type, id)
                     writeText(output, 200, "application/json; charset=utf-8", "{\"ok\":true}")
                 }
-                method == "GET" && path == "/api/file" && ok -> {
+                method == "GET" && path == "/api/file" && ok && windowsClient(head) -> {
                     val file = query["id"]?.let { bridge?.file(it) }
                     if (file == null || !file.exists()) {
                         writeText(output, 404, "text/plain", "Not found")
@@ -211,15 +235,28 @@ object DesktopLink {
                         writeFile(output, file)
                     }
                 }
+                method == "GET" && path == "/api/file" && ok -> {
+                    writeText(output, 403, "text/plain; charset=utf-8", "Open this file in TrackWindows. The browser cannot download it.")
+                }
                 else -> writeText(output, 404, "text/plain; charset=utf-8", "Open the address shown on the phone.")
             }
         } catch (_: Exception) {
         } finally {
+            liveSockets.remove(client)
             try {
                 client.close()
             } catch (_: Exception) {
             }
         }
+    }
+
+    private fun windowsClient(head: String): Boolean {
+        val ua = head.lineSequence()
+            .firstOrNull { it.startsWith("User-Agent:", ignoreCase = true) }
+            ?.substringAfter(":")
+            ?.trim()
+            .orEmpty()
+        return ua.contains("TrackWindows")
     }
 
     private fun noteClient(client: Socket, head: String) {
@@ -230,6 +267,7 @@ object DesktopLink {
             ?.trim()
             .orEmpty()
         val browser = when {
+            ua.contains("TrackWindows") -> "TrackWindows"
             ua.contains("Edg/") -> "Edge"
             ua.contains("Chrome/") -> "Chrome"
             ua.contains("Firefox/") -> "Firefox"
@@ -300,7 +338,13 @@ object DesktopLink {
 
     private fun writeText(output: BufferedOutputStream, code: Int, type: String, body: String) {
         val bytes = body.toByteArray(Charsets.UTF_8)
-        val status = if (code == 200) "OK" else if (code == 404) "Not Found" else "Error"
+        val status = when (code) {
+            200 -> "OK"
+            401 -> "Unauthorized"
+            403 -> "Forbidden"
+            404 -> "Not Found"
+            else -> "Error"
+        }
         val head = "HTTP/1.1 $code $status\r\n" +
             "Content-Type: $type\r\n" +
             "Content-Length: ${bytes.size}\r\n" +
@@ -312,10 +356,14 @@ object DesktopLink {
     }
 
     private fun writeFile(output: BufferedOutputStream, file: File) {
+        writeDownload(output, file, "application/pdf", file.name)
+    }
+
+    private fun writeDownload(output: BufferedOutputStream, file: File, type: String, name: String) {
         val head = "HTTP/1.1 200 OK\r\n" +
-            "Content-Type: application/pdf\r\n" +
+            "Content-Type: $type\r\n" +
             "Content-Length: ${file.length()}\r\n" +
-            "Content-Disposition: attachment; filename=\"${file.name}\"\r\n" +
+            "Content-Disposition: attachment; filename=\"$name\"\r\n" +
             "Connection: close\r\n\r\n"
         output.write(head.toByteArray(Charsets.ISO_8859_1))
         file.inputStream().use { it.copyTo(output) }
@@ -374,6 +422,7 @@ private const val PAGE = """<!DOCTYPE html>
   button.on, .on { background: #ff8a80; color: #1a1a1a; }
   .card { margin: 0 16px 10px; background: #1e1e24; border-radius: 16px; padding: 14px; cursor: pointer; }
   .card:hover { outline: 1px solid #ff8a80; }
+  .file, .file:hover { cursor: default; outline: none; }
   .plat { color: #ff8a80; font-size: 12px; font-weight: 700; }
   .name { font-size: 16px; font-weight: 700; margin-top: 2px; }
   .sub { color: #a1a1aa; font-size: 13px; }
@@ -381,6 +430,9 @@ private const val PAGE = """<!DOCTYPE html>
   .empty { color: #a1a1aa; padding: 28px 16px; text-align: center; }
   .back { margin: 8px 16px; }
   a.file { display: block; color: inherit; text-decoration: none; }
+  a.win { background: #d7e8ff; color: #1a1a1a; text-decoration: none; }
+  .add { display: flex; gap: 8px; padding: 0 16px 12px; }
+  .add input { flex: 1; border: 0; border-radius: 999px; padding: 10px 14px; background: #2a2a32; color: #fff; }
 </style>
 </head>
 <body>
@@ -391,11 +443,23 @@ private const val PAGE = """<!DOCTYPE html>
     <button id="b-news" onclick="act('news')">News</button>
     <button id="b-files" onclick="act('files')">Files</button>
     <button onclick="act('refresh')">Refresh</button>
+    <a class="btn win" id="win" href="#">Install TrackWindows</a>
   </nav>
+  <form class="add" id="add">
+    <input id="url" placeholder="Paste a profile link" />
+    <button type="submit">Add</button>
+  </form>
   <div id="app"></div>
 </div>
 <script>
 var token = new URLSearchParams(location.search).get("t") || "";
+document.getElementById("win").href = "/TrackWindows.cmd?t=" + encodeURIComponent(token);
+document.getElementById("add").onsubmit = function (e) {
+  e.preventDefault();
+  var box = document.getElementById("url");
+  act("scan", box.value);
+  box.value = "";
+};
 function act(type, id) {
   fetch("/api/act?t=" + encodeURIComponent(token), {
     method: "POST",
@@ -413,12 +477,15 @@ function load() {
     if (!r.ok) throw new Error("no");
     return r.json();
   }).then(draw).catch(function () {
-    document.getElementById("live").textContent = "Phone disconnected";
+    document.getElementById("live").textContent = "Left the phone";
+    document.getElementById("app").innerHTML = '<div class="empty">The phone logged out. Open Linked Devices again and connect with the new code.</div>';
+    document.getElementById("add").style.display = "none";
   });
 }
 function draw(s) {
   document.getElementById("who").textContent = s.name || "Track";
-  document.getElementById("live").textContent = "Live with your phone";
+  document.getElementById("live").textContent = s.note || "Live with your phone";
+  document.getElementById("add").style.display = "flex";
   ["home","news","files"].forEach(function (k) {
     document.getElementById("b-" + k).className = (s.screen === k.toUpperCase() || (k === "home" && s.screen === "DETAIL")) ? "on" : "";
   });
@@ -445,12 +512,12 @@ function draw(s) {
     });
   } else if (s.screen === "FILES") {
     if (!s.files || !s.files.length) html = '<div class="empty">No uploaded files on the phone.</div>';
+    else html += '<div class="empty">Files stay on the phone. Open them in TrackWindows. This page cannot download them.</div>';
     (s.files || []).forEach(function (f) {
-      html += '<a class="card file" href="/api/file?t=' + encodeURIComponent(token) + '&id=' + encodeURIComponent(f.id) + '">';
-      html += '<div class="name">' + esc(f.name) + '</div><div class="sub">' + esc(f.size) + '</div></a>';
+      html += '<div class="card file"><div class="name">' + esc(f.name) + '</div><div class="sub">' + esc(f.size) + '</div></div>';
     });
   } else {
-    if (!s.accounts || !s.accounts.length) html = '<div class="empty">No tags yet. Add one on the phone, and it shows up here.</div>';
+    if (!s.accounts || !s.accounts.length) html = '<div class="empty">No tags yet. Paste a profile link above, or add one on the phone.</div>';
     (s.accounts || []).forEach(function (a) {
       html += '<div class="card" data-id="' + esc(a.id) + '" onclick="act(\'open\', this.getAttribute(\'data-id\'))">';
       html += '<div class="plat">' + esc(a.platform) + '</div><div class="name">' + esc(a.name) + '</div>';
@@ -462,7 +529,7 @@ function draw(s) {
   document.getElementById("app").innerHTML = html;
 }
 load();
-setInterval(load, 1000);
+setInterval(load, 500);
 </script>
 </body>
 </html>

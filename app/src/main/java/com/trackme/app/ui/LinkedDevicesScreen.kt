@@ -69,7 +69,7 @@ fun LinkedDevicesScreen(vm: TrackViewModel) {
         Text("Linked Devices", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
         Spacer(Modifier.height(6.dp))
         Text(
-            "Put the phone and the computer on the same Wi-Fi. On Windows, Mac, or Linux, open the address in Chrome, Edge, Firefox, or Safari, then type the code. What you tap on the computer happens on the phone, and the phone updates the computer.",
+            "Put the phone and the computer on the same Wi-Fi. Open the address, type the code, then use Install TrackWindows. That downloads TrackWindows.cmd, separate from the phone APK. Open it to get TrackWindows.exe. Log out here, or sign out of the app, and the computer drops the link immediately.",
             color = Color(0xFFBDBDBD),
             fontSize = 14.sp
         )

@@ -54,6 +54,9 @@ import kotlinx.coroutines.withContext
 import java.net.URL
 import androidx.compose.ui.graphics.Outline
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -246,6 +249,44 @@ fun WaveformBars(
                 cornerRadius = CornerRadius(bw / 2f),
             )
         }
+    }
+}
+
+/** A smooth line of follower or subscriber totals. A steady count sits high, not as a dashed stub. */
+@Composable
+fun CountChart(values: List<Float>, modifier: Modifier, color: Color) {
+    Canvas(modifier) {
+        if (values.size < 2 || values.all { it <= 0f }) return@Canvas
+        val min = values.min()
+        val max = values.max()
+        val points = values.mapIndexed { i, v ->
+            val x = i * size.width / (values.lastIndex).coerceAtLeast(1)
+            val t = if (max == min) 0.86f else ((v - min) / (max - min)).coerceIn(0f, 1f)
+            val y = size.height * (1f - (0.10f + 0.78f * t))
+            Offset(x, y)
+        }
+        val line = Path().apply {
+            moveTo(points.first().x, points.first().y)
+            for (i in 1 until points.size) {
+                val prev = points[i - 1]
+                val cur = points[i]
+                val cx = (prev.x + cur.x) / 2f
+                quadraticBezierTo(cx, prev.y, cx, (prev.y + cur.y) / 2f)
+                quadraticBezierTo(cx, cur.y, cur.x, cur.y)
+            }
+        }
+        val fill = Path().apply {
+            addPath(line)
+            lineTo(points.last().x, size.height)
+            lineTo(points.first().x, size.height)
+            close()
+        }
+        drawPath(fill, color.copy(alpha = 0.16f))
+        drawPath(
+            line,
+            color,
+            style = Stroke(width = 3.2.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
     }
 }
 
