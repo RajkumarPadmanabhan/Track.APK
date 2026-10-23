@@ -29,6 +29,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
@@ -491,6 +492,66 @@ fun ProfileScreen(vm: TrackViewModel) {
                         } else {
                             Text("Update", fontWeight = FontWeight.Bold)
                         }
+                    }
+                }
+            }
+        }
+
+        // Test Crash Card (Firebase Crashlytics Setup Verification)
+        item {
+            Tile(
+                Modifier
+                    .fillMaxWidth()
+                    .clickable { throw RuntimeException("Test Crash") }
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.error.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.BugReport,
+                                contentDescription = "Test Crash",
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                "Test Crash",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                "Firebase Crashlytics verification",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                    Button(
+                        onClick = { throw RuntimeException("Test Crash") },
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.error.copy(alpha = 0.2f),
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Text("Test Crash", fontWeight = FontWeight.Bold)
                     }
                 }
             }
