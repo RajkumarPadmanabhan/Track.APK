@@ -12,6 +12,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -33,13 +35,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material.icons.filled.Palette
@@ -80,7 +82,8 @@ import com.trackme.app.TrackViewModel
 import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.tagLine
 import com.trackme.app.data.combinedActivity
-import com.trackme.app.data.computeStreak
+import com.trackme.app.data.compactCount
+import com.trackme.app.data.formatBytes
 import java.io.File
 import java.io.FileOutputStream
 
@@ -108,7 +111,11 @@ fun ProfileScreen(vm: TrackViewModel) {
         }
         return
     }
-    val streak = remember(vm.accounts) { computeStreak(combinedActivity(vm.accounts)) }
+    val activityTotal = remember(vm.accounts) {
+        val visible = vm.accounts.filter { !it.isHidden }
+        combinedActivity(visible).values.sum().toLong() + visible.sumOf { it.count ?: 0L }
+    }
+    var showOther by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val context = LocalContext.current
     var editProfile by remember { mutableStateOf(false) }
@@ -165,6 +172,12 @@ fun ProfileScreen(vm: TrackViewModel) {
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
+                        Text(
+                            "v${vm.currentAppVersion}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                     }
                     Spacer(Modifier.width(12.dp))
                     UserAvatar(session.name, session.avatarUrl, 64.dp)
@@ -175,8 +188,8 @@ fun ProfileScreen(vm: TrackViewModel) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     ProfileStat(vm.accounts.size.toString(), "Tags")
-                    ProfileStat(streak.current.toString(), "Day streak")
-                    ProfileStat(streak.activeDays.toString(), "Active days")
+                    ProfileStat(compactCount(activityTotal), "Activity")
+                    ProfileStat(formatBytes(vm.totalUploadedBytes), "Size")
                     val pinned = vm.pinnedBadgeIds.mapNotNull { id -> vm.earnedBadges.firstOrNull { it.id == id } }
                     if (pinned.isNotEmpty()) {
                         Row(
@@ -212,12 +225,11 @@ fun ProfileScreen(vm: TrackViewModel) {
         // ----- Settings -----
         item { SectionTitle("Settings", "Customization and app info") }
 
-        // Linked Devices Card
         item {
             Tile(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { vm.screen = Screen.LINKED_DEVICES }
+                    .clickable { showOther = true }
             ) {
                 Row(
                     modifier = Modifier
@@ -238,8 +250,8 @@ fun ProfileScreen(vm: TrackViewModel) {
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Computer,
-                                contentDescription = "Linked Devices",
+                                imageVector = Icons.Default.MoreHoriz,
+                                contentDescription = "Other",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(22.dp)
                             )
@@ -247,26 +259,26 @@ fun ProfileScreen(vm: TrackViewModel) {
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                "Linked Devices",
+                                "Other",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp
                             )
                             Text(
-                                "Open this app on a computer",
+                                "Linked devices, backup, updates, theme",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
                     Button(
-                        onClick = { vm.screen = Screen.LINKED_DEVICES },
+                        onClick = { showOther = true },
                         shape = RoundedCornerShape(50),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
                             contentColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
-                        Text("Manage", fontWeight = FontWeight.Bold)
+                        Text("Open", fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -341,66 +353,6 @@ fun ProfileScreen(vm: TrackViewModel) {
             }
         }
 
-        // Theme Button Card
-        item {
-            Tile(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { showThemeDialog = true }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Palette,
-                                contentDescription = "Theme",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                "Theme",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                            Text(
-                                "Current: ${vm.selectedThemeColor.label}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = { showThemeDialog = true },
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
-                            contentColor = MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Text("Change", fontWeight = FontWeight.Bold)
-                    }
-                }
-            }
-        }
-
         // About Button Card
         item {
             Tile(
@@ -461,75 +413,6 @@ fun ProfileScreen(vm: TrackViewModel) {
             }
         }
 
-        // App Updates Card
-        item {
-            Tile(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { vm.checkAppUpdate() }
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(18.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Refresh,
-                                contentDescription = "Check for Updates",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(22.dp)
-                            )
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                "App Update",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
-                            )
-                            Text(
-                                "Current version: v${vm.currentAppVersion}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                    Button(
-                        onClick = { vm.checkAppUpdate() },
-                        enabled = !vm.isCheckingAppUpdate,
-                        shape = RoundedCornerShape(50),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            contentColor = Color.Black
-                        )
-                    ) {
-                        if (vm.isCheckingAppUpdate) {
-                            androidx.compose.material3.CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                                color = Color.Black
-                            )
-                        } else {
-                            Text("Update", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-
         item {
             OutlinedButton(
                 onClick = { vm.refreshAccounts(force = true) },
@@ -537,30 +420,6 @@ fun ProfileScreen(vm: TrackViewModel) {
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(50),
             ) { Text(if (vm.refreshing) "Refreshing..." else "Refresh all tags now") }
-        }
-
-        item {
-            OutlinedButton(
-                onClick = { saveBackup.launch("TrackMe-backup.zip") },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(50),
-            ) {
-                Icon(Icons.Default.Download, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Download backup")
-            }
-        }
-
-        item {
-            OutlinedButton(
-                onClick = { openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) },
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-                shape = RoundedCornerShape(50),
-            ) {
-                Icon(Icons.Default.Upload, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Restore backup")
-            }
         }
 
         item {
@@ -578,7 +437,7 @@ fun ProfileScreen(vm: TrackViewModel) {
 
         item {
             Text(
-                "Track 1.0.0 · Developed by R Rajkumar padmanabhan",
+                "Track v${vm.currentAppVersion} · Developed by R Rajkumar padmanabhan",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -744,6 +603,40 @@ fun ProfileScreen(vm: TrackViewModel) {
         )
     }
 
+    if (showOther) {
+        AlertDialog(
+            onDismissRequest = { showOther = false },
+            title = { Text("Other", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OtherAction("Linked devices", "Open this app on a computer") {
+                        showOther = false
+                        vm.screen = Screen.LINKED_DEVICES
+                    }
+                    OtherAction("Download backup", "Save your tags and files") {
+                        saveBackup.launch("TrackMe-backup.zip")
+                    }
+                    OtherAction("Restore backup", "Load a saved backup") {
+                        openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                    }
+                    OtherAction(
+                        "App update",
+                        if (vm.isCheckingAppUpdate) "Checking…" else "Installed version: v${vm.currentAppVersion}",
+                    ) { vm.checkAppUpdate() }
+                    OtherAction("Theme", "Current: ${vm.selectedThemeColor.label}") {
+                        showOther = false
+                        showThemeDialog = true
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showOther = false }) {
+                    Text("Close", fontWeight = FontWeight.Bold)
+                }
+            },
+        )
+    }
+
     if (showAboutDialog) {
         AlertDialog(
             onDismissRequest = { showAboutDialog = false },
@@ -762,45 +655,46 @@ fun ProfileScreen(vm: TrackViewModel) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("About Track", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Text("v1.0.0", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    Text(
+                        "v${vm.currentAppVersion}",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             },
             text = {
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     Text(
-                        "developed by R Rajkumar padmanabhan",
+                        "Developed by R Rajkumar padmanabhan",
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.primary,
                     )
-
                     Text(
-                        "Track is an all-in-one growth tracker designed to monitor all your social media platforms, developer repositories, and personal portfolio websites in real time.",
+                        "Track keeps the public counts from the links you add, the files you upload, and a news page in one place.",
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-
-                    Spacer(Modifier.height(2.dp))
-                    Text("Supported Platforms", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Text(
-                        "GitHub, GitLab, Instagram, LinkedIn, YouTube, Facebook Page, X, and any other website.",
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(Modifier.height(2.dp))
-                    Text("What's New in Version 1.0", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        AboutBullet("Local profile photo picker (.jpg, .jpeg, .png)")
-                        AboutBullet("Personal Portfolio website tracking & OpenGraph preview")
-                        AboutBullet("Customizable App Theme Colors")
-                        AboutBullet("One-tap native app deep links & live Android widget")
-                        AboutBullet("JSON Backup & Restore capability")
-                    }
+                    Text("Features", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    AboutBullet("Scan GitHub, GitLab, Instagram, LinkedIn, YouTube, Facebook, X, and any other website")
+                    AboutBullet("One YouTube key for every channel. It is deleted when the last YouTube channel is removed")
+                    AboutBullet("Upload files and see the total size on your profile")
+                    AboutBullet("News stays in date order and refreshes while that page is open")
+                    AboutBullet("Swipe left for news, then your files. Swipe right to go back")
+                    AboutBullet("Link a computer and open Track on the desktop")
+                    AboutBullet("Download or restore a backup of your tags and files")
+                    AboutBullet("Turn a link into an app shortcut on the home screen")
+                    AboutBullet("Badges for scans, uploads, activity, file size, and days in the app")
+                    AboutBullet("Activity color and the jumping monkey follow your counts")
+                    AboutBullet("Theme colors, and a blue tick after the promo code")
                 }
             },
             confirmButton = {
@@ -916,8 +810,28 @@ private fun AboutBullet(text: String) {
 @Composable
 private fun ProfileStat(value: String, label: String) {
     Column {
-        Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            value,
+            fontSize = if (value.length > 6) 16.sp else 22.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            softWrap = false,
+        )
+        Text(label, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+    }
+}
+
+@Composable
+private fun OtherAction(title: String, subtitle: String, onClick: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    ) {
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+        Text(subtitle, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 

@@ -15,6 +15,8 @@ import android.os.Environment
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -100,6 +102,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
@@ -209,7 +214,12 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
     LaunchedEffect(vm.detailId) { tab = 0 }
 
     BackHandler(enabled = vm.screen != Screen.HOME) {
-        if (vm.screen == Screen.DETAIL) vm.closeDetail() else vm.screen = Screen.HOME
+        when (vm.screen) {
+            Screen.DETAIL -> vm.closeDetail()
+            Screen.FILES -> vm.screen = Screen.NEWS
+            Screen.NEWS -> vm.screen = Screen.HOME
+            else -> vm.screen = Screen.HOME
+        }
     }
 
     val showDetailNav = vm.screen == Screen.DETAIL && vm.user != null &&
@@ -235,7 +245,47 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
             }
         },
     ) { pad ->
-        Box(Modifier.padding(pad).fillMaxSize()) {
+        Box(
+            Modifier
+                .padding(pad)
+                .fillMaxSize()
+                .pointerInput(vm.screen) {
+                    val trigger = 88.dp.toPx()
+                    awaitEachGesture {
+                        val down = awaitFirstDown(pass = PointerEventPass.Initial, requireUnconsumed = false)
+                        var totalX = 0f
+                        var totalY = 0f
+                        var stolen = false
+                        while (true) {
+                            val initial = awaitPointerEvent(PointerEventPass.Initial)
+                            val change = initial.changes.firstOrNull { it.id == down.id } ?: break
+                            if (!change.pressed) break
+                            val delta = change.positionChange()
+                            totalX += delta.x
+                            totalY += delta.y
+                            val settled = awaitPointerEvent(PointerEventPass.Final)
+                            if (settled.changes.any { it.id == down.id && it.isConsumed }) stolen = true
+                            if (!stolen && kotlin.math.abs(totalX) > trigger && kotlin.math.abs(totalX) > kotlin.math.abs(totalY) * 1.4f) {
+                                val screen = vm.screen
+                                if (totalX < 0f) {
+                                    when (screen) {
+                                        Screen.HOME -> vm.screen = Screen.NEWS
+                                        Screen.NEWS -> vm.screen = Screen.FILES
+                                        else -> Unit
+                                    }
+                                } else {
+                                    when (screen) {
+                                        Screen.FILES -> vm.screen = Screen.NEWS
+                                        Screen.NEWS -> vm.screen = Screen.HOME
+                                        else -> Unit
+                                    }
+                                }
+                                break
+                            }
+                        }
+                    }
+                },
+        ) {
             when (vm.screen) {
                 Screen.HOME -> HomeScreen(vm)
                 Screen.PROFILE -> ProfileScreen(vm)

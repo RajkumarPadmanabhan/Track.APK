@@ -13,8 +13,8 @@ android {
         applicationId = "com.trackme.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 17
-        versionName = "1.3.5"
+        versionCode = 18
+        versionName = "1.3.6"
     }
 
     buildTypes {
@@ -35,7 +35,10 @@ android {
         freeCompilerArgs += listOf("-Xskip-metadata-version-check")
     }
 
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
     composeOptions { kotlinCompilerExtensionVersion = "1.5.10" }
 
     packaging {

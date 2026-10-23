@@ -1,6 +1,7 @@
 package com.trackme.app
 
 import android.app.Application
+import com.trackme.app.BuildConfig
 import android.content.Context
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -240,7 +241,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
 
     // App Update State
-    var currentAppVersion by mutableStateOf("1.2.4")
+    var currentAppVersion by mutableStateOf(BuildConfig.VERSION_NAME)
         private set
     var isCheckingAppUpdate by mutableStateOf(false)
         private set
@@ -265,7 +266,6 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 val cleanTag = tagName.trimStart('v', 'V').trim()
 
                 if (cleanTag.isNotBlank() && cleanTag != currentAppVersion && isNewerVersion(cleanTag, currentAppVersion)) {
-                    currentAppVersion = cleanTag
                     appUpdateMessage = "New update available: Version $cleanTag!"
                     appUpdateDownloadUrl = downloadUrl.ifBlank { "https://github.com/RajkumarPadmanabhan/Track.APK/releases" }
                 } else {
