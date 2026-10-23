@@ -37,9 +37,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.zIndex
+import kotlin.math.roundToInt
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -68,18 +75,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.Screen
 import com.trackme.app.TrackViewModel
-import android.content.Intent
-import android.provider.Settings
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.trackme.app.data.Days
-import com.trackme.app.data.ScreenTime
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
 import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.combinedActivity
 import com.trackme.app.data.compactCount
@@ -276,7 +272,10 @@ fun HomeScreen(vm: TrackViewModel) {
                 item { EmptyTags(onScan = { vm.openAdd() }) }
             } else if (isGridView) {
                 val gridGroups = accounts.distinctBy { it.id }.groupBy { it.platform }.values.toList()
-                items(gridGroups.chunked(2)) { pair ->
+                items(
+                    items = gridGroups.chunked(2),
+                    key = { pair -> "grid-" + pair.joinToString("-") { it.firstOrNull()?.id ?: "x" } },
+                ) { pair ->
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         pair.forEach { group ->
                             Box(Modifier.weight(1f)) {
@@ -297,41 +296,153 @@ fun HomeScreen(vm: TrackViewModel) {
             item { Spacer(Modifier.height(8.dp)) }
         }
 
-        if (selectedGroupForPopup != null) {
-            androidx.compose.ui.window.Dialog(onDismissRequest = { selectedGroupForPopup = null }) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(Brand.Panel)
-                ) {
-                    Column(Modifier.padding(24.dp).fillMaxWidth()) {
-                        Text("${selectedGroupForPopup!!.first().platform.label} Accounts", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                        Spacer(Modifier.height(16.dp))
-                        LazyColumn(modifier = Modifier.weight(1f, fill = false)) {
-                            items(selectedGroupForPopup!!) { acc ->
-                                Row(
-                                    Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable {
-                                        vm.openAccount(acc.id)
-                                        selectedGroupForPopup = null
-                                    }.padding(12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    AccountAvatar(acc, 40.dp)
-                                    Spacer(Modifier.width(12.dp))
-                                    Column(Modifier.weight(1f)) {
-                                        Text(acc.name.ifBlank { acc.handle }, color = Color.White, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                        Text(acc.tagLine(withPlatform = false), color = Color.White.copy(alpha=0.6f), fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    }
-                                }
+        selectedGroupForPopup?.takeIf { it.size > 1 }?.let { group ->
+            GroupOrderDialog(
+                group = group,
+                onDismiss = { selectedGroupForPopup = null },
+                onOpen = { acc ->
+                    selectedGroupForPopup = null
+                    vm.openAccount(acc.id)
+                },
+                onReorder = { ids ->
+                    runCatching { vm.reorderGroup(ids) }
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun GroupOrderDialog(
+    group: List<TrackedAccount>,
+    onDismiss: () -> Unit,
+    onOpen: (TrackedAccount) -> Unit,
+    onReorder: (List<String>) -> Unit,
+) {
+    val orderKey = group.map { it.id }.joinToString()
+    val holder = remember(orderKey) { object { var items = group } }
+    var rows by remember(orderKey) { mutableStateOf(group) }
+    var draggingId by remember { mutableStateOf<String?>(null) }
+    var dragDy by remember { mutableFloatStateOf(0f) }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = {
+        runCatching { onReorder(holder.items.map { it.id }) }
+        onDismiss()
+    }) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(24.dp))
+                .background(Brand.Panel)
+                .padding(24.dp),
+        ) {
+            Text(
+                "${group.firstOrNull()?.platform?.label ?: "Profiles"} profiles",
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
+            )
+            Text(
+                "Drag a profile to the top. That one shows first on the card.",
+                fontSize = 13.sp,
+                color = Color.White.copy(alpha = 0.65f),
+            )
+            Spacer(Modifier.height(12.dp))
+            Column {
+                for (acc in rows) {
+                    key(acc.id) {
+                    val dragging = draggingId == acc.id
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .zIndex(if (dragging) 1f else 0f)
+                            .offset { IntOffset(0, if (dragging) dragDy.roundToInt() else 0) }
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (dragging) Color.White.copy(alpha = 0.08f) else Color.Transparent)
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Default.Menu,
+                            contentDescription = "Drag",
+                            tint = Color.White.copy(alpha = 0.7f),
+                            modifier = Modifier
+                                .size(40.dp)
+                                .pointerInput(acc.id) {
+                                    val itemHeight = 64.dp.toPx().coerceAtLeast(1f)
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            draggingId = acc.id
+                                            dragDy = 0f
+                                        },
+                                        onDragCancel = {
+                                            draggingId = null
+                                            dragDy = 0f
+                                        },
+                                        onDrag = { change, amount ->
+                                            change.consume()
+                                            dragDy += amount.y
+                                        },
+                                        onDragEnd = {
+                                            val current = holder.items
+                                            val from = current.indexOfFirst { it.id == acc.id }
+                                            val shift = (dragDy / itemHeight).toInt()
+                                            if (from >= 0 && shift != 0 && current.isNotEmpty()) {
+                                                val to = (from + shift).coerceIn(0, current.lastIndex)
+                                                if (to != from) {
+                                                    val next = current.toMutableList()
+                                                    val moved = next.removeAt(from)
+                                                    next.add(to, moved)
+                                                    holder.items = next
+                                                    rows = next
+                                                    runCatching { onReorder(next.map { it.id }) }
+                                                }
+                                            }
+                                            draggingId = null
+                                            dragDy = 0f
+                                        },
+                                    )
+                                },
+                        )
+                        Row(
+                            Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onOpen(acc) }
+                                .padding(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            AccountAvatar(acc, 40.dp)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    acc.name.ifBlank { acc.handle },
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Text(
+                                    acc.tagLine(withPlatform = false),
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                             }
                         }
-                        Spacer(Modifier.height(8.dp))
-                        androidx.compose.material3.TextButton(onClick = { selectedGroupForPopup = null }, modifier = Modifier.align(Alignment.End)) {
-                            Text("Cancel", color = Brand.Coral)
-                        }
+                    }
                     }
                 }
+            }
+            androidx.compose.material3.TextButton(
+                onClick = {
+                    runCatching { onReorder(holder.items.map { it.id }) }
+                    onDismiss()
+                },
+                modifier = Modifier.align(Alignment.End),
+            ) {
+                Text("Done", color = Brand.Coral)
             }
         }
     }
@@ -395,36 +506,6 @@ private fun HeroTile(
         )
     }
     val currentBg = bgColors[bgIndex % bgColors.size]
-    val context = LocalContext.current
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var resumeKey by remember { mutableStateOf(0) }
-    var screenLabel by remember { mutableStateOf<String?>(null) }
-    var usageAllowed by remember { mutableStateOf(false) }
-    var usageChecked by remember { mutableStateOf(false) }
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) resumeKey += 1
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
-    }
-    LaunchedEffect(resumeKey) {
-        while (isActive) {
-            val (allowed, label) = withContext(Dispatchers.IO) {
-                val access = ScreenTime.hasAccess(context)
-                val text = if (access) {
-                    ScreenTime.todayMillis(context)?.let { ScreenTime.format(it) }?.takeIf { it.isNotBlank() }
-                } else {
-                    null
-                }
-                access to text
-            }
-            usageAllowed = allowed
-            screenLabel = label
-            usageChecked = true
-            delay(30_000)
-        }
-    }
     val ink = Brand.Ink
     val bars = remember(combined) {
         val raw = (35 downTo 0).map { (combined[Days.key(-it)] ?: 0).toFloat() }
@@ -453,17 +534,6 @@ private fun HeroTile(
                 )
             }
             HeroSmall(tags.toString(), "Tags", Modifier.weight(0.4f))
-            HeroSmall(
-                value = screenLabel ?: if (!usageChecked || usageAllowed) "" else "Allow",
-                label = "Time",
-                modifier = Modifier.weight(0.5f).then(
-                    if (usageAllowed) Modifier else Modifier.clickable {
-                        val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        runCatching { context.startActivity(intent) }
-                    }
-                ),
-            )
         }
     }
 }
@@ -839,12 +909,12 @@ private fun StackedGridAccountCard(group: List<TrackedAccount>, onClick: () -> U
                     Spacer(Modifier.width(8.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            "${acc.platform.label}s",
+                            acc.name.ifBlank { acc.handle },
                             color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                         Text(
-                            "${group.size} Profiles",
+                            "Shows first · ${group.size}",
                             color = Color.White.copy(alpha = 0.6f), fontSize = 11.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )

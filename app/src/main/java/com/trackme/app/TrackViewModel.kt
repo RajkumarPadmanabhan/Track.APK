@@ -28,6 +28,9 @@ import com.trackme.app.data.mergeWith
 import com.trackme.app.data.nameFromEmail
 import com.trackme.app.data.newAccount
 import com.trackme.app.data.NewsDataRepository
+import com.trackme.app.data.PdfPortfolio
+import com.trackme.app.data.PdfReadException
+import com.trackme.app.data.PdfPortfolioReader
 import com.trackme.app.data.UserNewsPost
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -99,15 +102,21 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _isNewsLoading.value = true
             val seen = LinkedHashMap<String, UserNewsPost>()
-            NewsDataRepository.liveFlow().collect { batch ->
-                for (post in batch) {
-                    val key = post.sourceUrl.ifBlank { post.id }.lowercase()
-                    if (key.isNotBlank()) seen.putIfAbsent(key, post)
+            try {
+                NewsDataRepository.liveFlow().collect { batch ->
+                    for (post in batch) {
+                        val key = post.sourceUrl.ifBlank { post.id }.lowercase()
+                        if (key.isNotBlank()) seen.putIfAbsent(key, post)
+                    }
+                    if (seen.isNotEmpty()) _newsFeed.value = seen.values.toList()
                 }
+                _newsFeed.value = seen.values.toList()
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
                 if (seen.isNotEmpty()) _newsFeed.value = seen.values.toList()
+            } finally {
+                _isNewsLoading.value = false
             }
-            _newsFeed.value = seen.values.toList()
-            _isNewsLoading.value = false
         }
     }
 
@@ -120,6 +129,12 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     var linkProfile by mutableStateOf<ParsedProfile?>(null)
     var preview by mutableStateOf<PublicProfile?>(null)
     var previewNote by mutableStateOf<String?>(null)
+
+    // Portfolio built from an uploaded PDF (for example a resume).
+    var pdfPortfolio by mutableStateOf<PdfPortfolio?>(null)
+        private set
+    var pdfScanning by mutableStateOf(false)
+        private set
 
     // Repo list filters
     var sort by mutableStateOf(SortMode.BEST)
@@ -287,8 +302,51 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         linkProfile = null
         preview = null
         previewNote = null
+        pdfPortfolio = null
+        pdfScanning = false
         language = null
         query = ""
+    }
+
+    /** Reads every page of the picked PDF and turns its headings into a portfolio. */
+    fun onPdfSelected(context: Context, uri: android.net.Uri) {
+        if (pdfScanning) return
+        pdfScanning = true
+        loading = true
+        error = null
+        previewNote = null
+        viewModelScope.launch {
+            try {
+                val portfolio = PdfPortfolioReader.read(context, uri)
+                platform = Platform.PORTFOLIO
+                pdfPortfolio = portfolio
+                val handle = portfolio.name.lowercase()
+                    .replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                    .ifBlank { "portfolio" }
+                val parsed = ParsedProfile(handle, "pdf:" + portfolio.fileName)
+                linkProfile = parsed
+                preview = PublicProfile(
+                    name = portfolio.name,
+                    handle = "@$handle",
+                    subtitle = portfolio.headline,
+                    description = portfolio.summary,
+                    imageUrl = null,
+                    stats = listOf(
+                        "Sections" to portfolio.sections.size.toString(),
+                        "Pages" to portfolio.pageCount.toString(),
+                    ),
+                    portfolio = portfolio,
+                )
+                checkCrossAccountDuplicate()
+            } catch (e: PdfReadException) {
+                error = e.message
+            } catch (_: Throwable) {
+                error = "Couldn't read this PDF. Pick the original file and try again."
+            } finally {
+                pdfScanning = false
+                loading = false
+            }
+        }
     }
 
     // ---------- Sign in / profile ----------
@@ -373,6 +431,25 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
     /** The result of the current scan as a home-page tag, or null when nothing was scanned yet. */
     fun currentDraft(): TrackedAccount? {
+        pdfPortfolio?.let { portfolio ->
+            val pub = preview ?: PublicProfile(
+                name = portfolio.name,
+                handle = portfolio.name,
+                subtitle = portfolio.headline,
+                description = portfolio.summary,
+                imageUrl = null,
+                stats = emptyList(),
+                portfolio = portfolio,
+            )
+            val handle = portfolio.name.lowercase()
+                .replace(Regex("[^a-z0-9]+"), "-").trim('-')
+                .ifBlank { "portfolio" }
+            return newAccount(
+                Platform.PORTFOLIO,
+                ParsedProfile(handle, "pdf:" + portfolio.fileName),
+                Sync.fromPreview(pub),
+            )
+        }
         val p = platform
         val u = user
         if (u != null && p.fullScan) {
@@ -429,6 +506,28 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         persist()
     }
 
+    fun reorderGroup(orderedIds: List<String>) {
+        if (orderedIds.size < 2) return
+        val byId = accounts.associateBy { it.id }
+        val moving = orderedIds.mapNotNull { byId[it] }
+        if (moving.size < 2) return
+        val movingIds = moving.map { it.id }.toSet()
+        val next = ArrayList<TrackedAccount>(accounts.size)
+        var placed = false
+        for (acc in accounts) {
+            if (acc.id in movingIds) {
+                if (!placed) {
+                    next.addAll(moving)
+                    placed = true
+                }
+            } else {
+                next.add(acc)
+            }
+        }
+        accounts = next
+        persist()
+    }
+
     fun toggleAccountVisibility(id: String) {
         accounts = accounts.map {
             if (it.id == id) it.copy(isHidden = !it.isHidden) else it
@@ -442,6 +541,42 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         screen = Screen.DETAIL
         platform = acc.platform
         resetScan()
+        if (acc.portfolioSections.isNotEmpty()) {
+            // The portfolio is saved on this phone. Show it as saved, with no web scan.
+            val portfolio = PdfPortfolio(
+                fileName = acc.portfolioFileName ?: "Resume.pdf",
+                pageCount = acc.portfolioPageCount,
+                name = acc.name,
+                headline = acc.subtitle,
+                email = acc.portfolioEmail,
+                phone = acc.portfolioPhone,
+                links = acc.portfolioLinks,
+                summary = acc.portfolioSections.firstOrNull { it.category == "Profile" }
+                    ?.items?.joinToString(" ")?.take(600),
+                sections = acc.portfolioSections,
+                skills = acc.portfolioSections.firstOrNull { it.category == "Skills" }
+                    ?.items?.flatMap { it.split(Regex("[,|/•]")) }
+                    ?.map { it.trim() }?.filter { it.isNotBlank() }?.take(30)
+                    .orEmpty(),
+                usedOcr = false,
+            )
+            pdfPortfolio = portfolio
+            linkProfile = ParsedProfile(acc.handle, acc.url)
+            preview = PublicProfile(
+                name = acc.name,
+                handle = "@" + acc.handle,
+                subtitle = acc.subtitle,
+                description = portfolio.summary,
+                imageUrl = null,
+                stats = listOf(
+                    "Sections" to acc.portfolioSections.size.toString(),
+                    "Pages" to acc.portfolioPageCount.toString(),
+                ),
+                portfolio = portfolio,
+            )
+            input = acc.url
+            return
+        }
         input = acc.url
         scan()
     }

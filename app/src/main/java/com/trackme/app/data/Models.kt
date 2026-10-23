@@ -30,6 +30,28 @@ data class GhRepo(
     val zipUrl: String,
 )
 
+/** One heading from an uploaded PDF, with the lines that belong to it. */
+data class PortfolioSection(
+    val heading: String,
+    val category: String,
+    val items: List<String>,
+)
+
+/** A simple portfolio built only from the text found inside an uploaded PDF. */
+data class PdfPortfolio(
+    val fileName: String,
+    val pageCount: Int,
+    val name: String,
+    val headline: String?,
+    val email: String?,
+    val phone: String?,
+    val links: List<String>,
+    val summary: String?,
+    val sections: List<PortfolioSection>,
+    val skills: List<String>,
+    val usedOcr: Boolean,
+)
+
 /** Public details read from a social profile (YouTube, Instagram, LinkedIn). */
 data class PublicProfile(
     val name: String,
@@ -40,6 +62,7 @@ data class PublicProfile(
     val stats: List<Pair<String, String>>,
     val recentVideos: List<YouTubeVideoItem> = emptyList(),
     val shop: List<ShopEntry> = emptyList(),
+    val portfolio: PdfPortfolio? = null,
 )
 
 /** One cart product or one order read from Amazon or Flipkart. */

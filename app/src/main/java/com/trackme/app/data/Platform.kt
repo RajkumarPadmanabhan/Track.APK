@@ -143,5 +143,9 @@ enum class Platform(
     }
 }
 
-/** Finds which platform a pasted/shared link belongs to. */
-fun detectPlatform(text: String): Platform? = Platform.values().firstOrNull { it.matches(text) }
+/** Finds which platform a pasted/shared link belongs to. Amazon and Flipkart are not scanned. */
+fun detectPlatform(text: String): Platform? {
+    val lower = text.lowercase()
+    if ("amazon." in lower || "amzn." in lower || "flipkart.com" in lower) return null
+    return Platform.values().firstOrNull { it != Platform.AMAZON && it != Platform.FLIPKART && it.matches(text) }
+}

@@ -2,7 +2,10 @@
 
 package com.trackme.app.ui
 
+import android.content.Intent
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -22,8 +25,10 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,6 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.TrackViewModel
 import com.trackme.app.auth.GoogleAuthManager
+import com.trackme.app.data.PdfPortfolio
 import com.trackme.app.data.Platform
 import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.compactCount
@@ -67,6 +73,14 @@ fun AddTagSheet(vm: TrackViewModel) {
     val p = vm.platform
     val shop = p == Platform.AMAZON || p == Platform.FLIPKART
     val draft = vm.currentDraft()
+    val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) {
+            runCatching {
+                ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            vm.onPdfSelected(ctx, uri)
+        }
+    }
 
     ModalBottomSheet(
         onDismissRequest = { vm.closeAdd() },
@@ -93,11 +107,33 @@ fun AddTagSheet(vm: TrackViewModel) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
 
+            OutlinedButton(
+                onClick = { pdfPicker.launch(arrayOf("application/pdf")) },
+                enabled = !vm.pdfScanning,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(50),
+            ) {
+                if (vm.pdfScanning) {
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.5.dp)
+                    Spacer(Modifier.width(10.dp))
+                    Text("Reading every page…", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(Icons.Default.PictureAsPdf, null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text("Upload PDF (resume)", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+            Text(
+                "The whole PDF is read on this phone and turned into a portfolio from its own headings. Nothing is added that is not in the file.",
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Platform.values().forEach { option ->
+                Platform.values().filter { it != Platform.AMAZON && it != Platform.FLIPKART }.forEach { option ->
                     FilterChip(
                         selected = p == option,
                         onClick = { vm.selectPlatform(option) },
@@ -155,7 +191,7 @@ fun AddTagSheet(vm: TrackViewModel) {
             }
 
             if (draft != null && vm.error == null && !vm.loading) {
-                DraftCard(draft)
+                if (vm.pdfPortfolio != null) PdfPortfolioPreview(vm.pdfPortfolio!!) else DraftCard(draft)
                 vm.previewNote?.let {
                     Text(it, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -292,6 +328,68 @@ private fun DraftCard(d: TrackedAccount) {
                         Text(value, color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                         Text(label, color = ink.copy(alpha = 0.65f), fontSize = 12.sp)
                     }
+                }
+            }
+        }
+    }
+}
+
+/** The portfolio read from the PDF, grouped by the headings inside that PDF. */
+@Composable
+private fun PdfPortfolioPreview(portfolio: PdfPortfolio) {
+    val ink = Brand.Ink
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(28.dp))
+            .background(Platform.PORTFOLIO.cardColor)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column {
+            Text(portfolio.name, color = ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+            portfolio.headline?.let {
+                Text(it, color = ink.copy(alpha = 0.75f), fontSize = 14.sp)
+            }
+            val contact = listOfNotNull(portfolio.email, portfolio.phone).joinToString(" · ")
+            if (contact.isNotBlank()) {
+                Text(contact, color = ink.copy(alpha = 0.65f), fontSize = 12.sp)
+            }
+            Text(
+                "${portfolio.fileName} · ${portfolio.pageCount} page${if (portfolio.pageCount == 1) "" else "s"} · ${portfolio.sections.size} sections",
+                color = ink.copy(alpha = 0.65f),
+                fontSize = 12.sp,
+            )
+            if (portfolio.usedOcr) {
+                Text(
+                    "This PDF had no text layer, so its pages were read as images.",
+                    color = ink.copy(alpha = 0.65f),
+                    fontSize = 12.sp,
+                )
+            }
+        }
+        portfolio.sections.forEach { section ->
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(
+                    section.heading,
+                    color = ink,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                )
+                Text(
+                    section.category,
+                    color = ink.copy(alpha = 0.55f),
+                    fontSize = 11.sp,
+                )
+                section.items.take(6).forEach { item ->
+                    Text("• $item", color = ink.copy(alpha = 0.85f), fontSize = 13.sp)
+                }
+                if (section.items.size > 6) {
+                    Text(
+                        "+ ${section.items.size - 6} more lines in this section",
+                        color = ink.copy(alpha = 0.6f),
+                        fontSize = 12.sp,
+                    )
                 }
             }
         }

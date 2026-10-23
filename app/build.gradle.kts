@@ -13,8 +13,8 @@ android {
         applicationId = "com.trackme.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 10
-        versionName = "1.2.8"
+        versionCode = 11
+        versionName = "1.2.9"
     }
 
     buildTypes {
@@ -59,6 +59,10 @@ dependencies {
     implementation("androidx.glance:glance-material3:1.1.0")
     implementation("androidx.work:work-runtime-ktx:2.9.0")
     implementation("io.coil-kt:coil-compose:2.6.0")
+
+    // PDF resume scan: reads every page on the device. OCR covers scanned/image PDFs.
+    implementation("com.tom-roush:pdfbox-android:2.0.27.0")
+    implementation("com.google.mlkit:text-recognition:16.0.1")
 
     // Google Credential Manager & Google ID for One-Tap Sign In
     implementation("androidx.credentials:credentials:1.3.0")

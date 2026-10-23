@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.ViewList
@@ -41,7 +41,9 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
     val newsFeed by vm.newsFeed.collectAsState()
     val isNewsLoading by vm.isNewsLoading.collectAsState()
     var isGridView by remember { mutableStateOf(false) }
-    val stories = remember(newsFeed) { newsFeed.distinctBy { it.id } }
+    val stories = remember(newsFeed) {
+        newsFeed.distinctBy { it.sourceUrl.ifBlank { it.id }.ifBlank { it.title } }
+    }
 
     LaunchedEffect(Unit) {
         vm.loadLiveNews()
@@ -99,7 +101,7 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(stories, key = { "news-${it.id}" }) { post ->
+                itemsIndexed(stories, key = { index, post -> "grid-$index-${post.sourceUrl}-${post.title}" }) { _, post ->
                     NewsPostCard(post = post)
                 }
             }
@@ -108,7 +110,7 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                items(stories, key = { "news-${it.id}" }) { post ->
+                itemsIndexed(stories, key = { index, post -> "list-$index-${post.sourceUrl}-${post.title}" }) { _, post ->
                     NewsPostCard(post = post)
                 }
                 item { Spacer(modifier = Modifier.height(100.dp)) }

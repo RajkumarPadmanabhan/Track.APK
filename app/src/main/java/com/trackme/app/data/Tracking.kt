@@ -35,6 +35,13 @@ data class TrackedAccount(
     val isHidden: Boolean = false,
     /** Google email the user picked for an Amazon or Flipkart tag. */
     val linkedEmail: String? = null,
+    /** Portfolio sections read from an uploaded PDF. Empty for link tags. */
+    val portfolioSections: List<PortfolioSection> = emptyList(),
+    val portfolioFileName: String? = null,
+    val portfolioPageCount: Int = 0,
+    val portfolioEmail: String? = null,
+    val portfolioPhone: String? = null,
+    val portfolioLinks: List<String> = emptyList(),
 )
 
 /** Fresh data read from a platform, before it is merged into a [TrackedAccount]. */
@@ -46,6 +53,7 @@ data class Snapshot(
     val countLabel: String,
     val extras: List<Pair<String, String>>,
     val activity: Map<String, Int>?,
+    val portfolio: PdfPortfolio? = null,
 )
 
 data class Streak(val current: Int, val longest: Int, val activeDays: Int, val since: String?)
@@ -166,6 +174,12 @@ fun newAccount(platform: Platform, parsed: ParsedProfile, s: Snapshot): TrackedA
         addedAt = today,
         syncedAt = System.currentTimeMillis(),
         isHidden = false,
+        portfolioSections = s.portfolio?.sections.orEmpty(),
+        portfolioFileName = s.portfolio?.fileName,
+        portfolioPageCount = s.portfolio?.pageCount ?: 0,
+        portfolioEmail = s.portfolio?.email,
+        portfolioPhone = s.portfolio?.phone,
+        portfolioLinks = s.portfolio?.links.orEmpty(),
     )
 }
 
@@ -189,6 +203,12 @@ fun TrackedAccount.mergeWith(f: TrackedAccount): TrackedAccount {
         syncedAt = f.syncedAt,
         isHidden = isHidden,
         linkedEmail = f.linkedEmail ?: linkedEmail,
+        portfolioSections = f.portfolioSections.ifEmpty { portfolioSections },
+        portfolioFileName = f.portfolioFileName ?: portfolioFileName,
+        portfolioPageCount = if (f.portfolioPageCount > 0) f.portfolioPageCount else portfolioPageCount,
+        portfolioEmail = f.portfolioEmail ?: portfolioEmail,
+        portfolioPhone = f.portfolioPhone ?: portfolioPhone,
+        portfolioLinks = f.portfolioLinks.ifEmpty { portfolioLinks },
     )
 }
 
@@ -297,6 +317,22 @@ object Sync {
     )
 
     fun fromPreview(p: PublicProfile): Snapshot {
+        p.portfolio?.let { pf ->
+            return Snapshot(
+                name = pf.name,
+                avatarUrl = null,
+                subtitle = pf.headline,
+                count = pf.sections.size.toLong(),
+                countLabel = "Sections",
+                extras = buildList {
+                    add("Pages" to pf.pageCount.toString())
+                    if (pf.skills.isNotEmpty()) add("Skills" to pf.skills.take(8).joinToString(", "))
+                    pf.email?.let { add("Email" to it) }
+                },
+                activity = null,
+                portfolio = pf,
+            )
+        }
         if (p.shop.isNotEmpty()) {
             val total = p.shop.filter { it.kind == "Order" }.sumOf { parseMoney(it.amountLabel) }.takeIf { it > 0L }
             return Snapshot(
@@ -360,7 +396,11 @@ object Sync {
             }
             Platform.YOUTUBE ->
                 if (youtubeKey.isBlank()) null else fromPreview(SocialApi.fetchYouTube(parsed, youtubeKey))
-            Platform.INSTAGRAM, Platform.LINKEDIN, Platform.FACEBOOK, Platform.PORTFOLIO, Platform.X,
+            // A PDF portfolio lives on this phone. There is no web page to re-read.
+            Platform.PORTFOLIO ->
+                if (acc.portfolioSections.isNotEmpty() || acc.url.startsWith("pdf:", ignoreCase = true)) null
+                else fromPreview(SocialApi.fetchPreview(acc.platform, parsed))
+            Platform.INSTAGRAM, Platform.LINKEDIN, Platform.FACEBOOK, Platform.X,
             Platform.AMAZON, Platform.FLIPKART ->
                 fromPreview(SocialApi.fetchPreview(acc.platform, parsed))
         }
@@ -454,6 +494,20 @@ object Store {
         put("activity", JSONObject().also { o -> a.activity.forEach { (k, v) -> o.put(k, v) } })
         put("isHidden", a.isHidden)
         put("linkedEmail", a.linkedEmail ?: JSONObject.NULL)
+        put("portfolioFileName", a.portfolioFileName ?: JSONObject.NULL)
+        put("portfolioPageCount", a.portfolioPageCount)
+        put("portfolioEmail", a.portfolioEmail ?: JSONObject.NULL)
+        put("portfolioPhone", a.portfolioPhone ?: JSONObject.NULL)
+        put("portfolioLinks", JSONArray().also { arr -> a.portfolioLinks.forEach { arr.put(it) } })
+        put("portfolioSections", JSONArray().also { arr ->
+            a.portfolioSections.forEach { s ->
+                arr.put(JSONObject().apply {
+                    put("heading", s.heading)
+                    put("category", s.category)
+                    put("items", JSONArray().also { items -> s.items.forEach { items.put(it) } })
+                })
+            }
+        })
     }
 
     private fun fromJson(o: JSONObject): TrackedAccount? {
@@ -472,6 +526,22 @@ object Store {
             val activity = o.optJSONObject("activity")?.let { h ->
                 h.keys().asSequence().associateWith { k -> h.getInt(k) }
             } ?: emptyMap()
+            val portfolioSections = o.optJSONArray("portfolioSections")?.let { arr ->
+                (0 until arr.length()).map { i ->
+                    val s = arr.getJSONObject(i)
+                    val items = s.optJSONArray("items")?.let { ia ->
+                        (0 until ia.length()).map { j -> ia.getString(j) }
+                    } ?: emptyList()
+                    PortfolioSection(
+                        heading = s.optString("heading"),
+                        category = s.optString("category"),
+                        items = items,
+                    )
+                }
+            } ?: emptyList()
+            val portfolioLinks = o.optJSONArray("portfolioLinks")?.let { arr ->
+                (0 until arr.length()).map { i -> arr.getString(i) }
+            } ?: emptyList()
             TrackedAccount(
                 id = o.getString("id"),
                 platform = platform,
@@ -489,6 +559,12 @@ object Store {
                 syncedAt = o.optLong("syncedAt"),
                 isHidden = o.optBoolean("isHidden", false),
                 linkedEmail = o.str("linkedEmail"),
+                portfolioSections = portfolioSections,
+                portfolioFileName = o.str("portfolioFileName"),
+                portfolioPageCount = o.optInt("portfolioPageCount", 0),
+                portfolioEmail = o.str("portfolioEmail"),
+                portfolioPhone = o.str("portfolioPhone"),
+                portfolioLinks = portfolioLinks,
             )
         } catch (e: Exception) {
             null

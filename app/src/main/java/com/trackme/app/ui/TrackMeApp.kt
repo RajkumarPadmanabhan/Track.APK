@@ -423,38 +423,99 @@ private fun LinkProfileCard(
             }
             if (shop.isNotEmpty()) ShopList(shop)
         }
+        val portfolioSections = account?.portfolioSections?.takeIf { it.isNotEmpty() }
+            ?: preview?.portfolio?.sections.orEmpty()
+        if (portfolioSections.isNotEmpty()) {
+            PortfolioSectionsView(
+                sections = portfolioSections,
+                fileName = account?.portfolioFileName ?: preview?.portfolio?.fileName,
+                pageCount = account?.portfolioPageCount?.takeIf { it > 0 }
+                    ?: preview?.portfolio?.pageCount ?: 0,
+                email = account?.portfolioEmail ?: preview?.portfolio?.email,
+                phone = account?.portfolioPhone ?: preview?.portfolio?.phone,
+                links = account?.portfolioLinks?.takeIf { it.isNotEmpty() }
+                    ?: preview?.portfolio?.links.orEmpty(),
+            )
+        }
         note?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-        Tile(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(platform.label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text(
-                    "@" + profile.handle.trimStart('@'),
-                    fontSize = 30.sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(profile.url, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (portfolioSections.isEmpty()) {
+            Tile(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(platform.label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(
+                        "@" + profile.handle.trimStart('@'),
+                        fontSize = 30.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(profile.url, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Button(onClick = { openUrl(ctx, profile.url) }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.OpenInNew, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Open profile")
             }
         }
-        Button(onClick = { openUrl(ctx, profile.url) }, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.OpenInNew, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Open profile")
+        if (portfolioSections.isEmpty()) {
+            OutlinedButton(
+                onClick = { shareText(ctx, "${platform.label} profile", profile.url, "Share profile") },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Icon(Icons.Default.Share, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Share link")
+            }
+            OutlinedButton(onClick = { copyText(ctx, profile.url) }, modifier = Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Copy link")
+            }
         }
-        OutlinedButton(
-            onClick = { shareText(ctx, "${platform.label} profile", profile.url, "Share profile") },
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Icon(Icons.Default.Share, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Share link")
+    }
+}
+
+@Composable
+private fun PortfolioSectionsView(
+    sections: List<com.trackme.app.data.PortfolioSection>,
+    fileName: String?,
+    pageCount: Int,
+    email: String?,
+    phone: String?,
+    links: List<String>,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Tile(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Portfolio from PDF", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                if (!fileName.isNullOrBlank()) {
+                    Text(
+                        "$fileName · $pageCount page${if (pageCount == 1) "" else "s"}",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                val contact = listOfNotNull(email, phone).joinToString(" · ")
+                if (contact.isNotBlank()) Text(contact, fontSize = 13.sp)
+                links.forEach { link -> Text(link, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary) }
+            }
         }
-        OutlinedButton(onClick = { copyText(ctx, profile.url) }, modifier = Modifier.fillMaxWidth()) {
-            Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Copy link")
+        sections.forEach { section ->
+            Tile(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(section.heading, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text(
+                        section.category,
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    section.items.forEach { item ->
+                        Text("• $item", fontSize = 14.sp)
+                    }
+                }
+            }
         }
     }
 }
