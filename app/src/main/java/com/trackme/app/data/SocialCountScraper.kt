@@ -23,7 +23,8 @@ object SocialCountScraper {
         try {
             var loaded = false
             var best = SocialCounts(null, null)
-            for (url in targets(rawUrl)) {
+            val pages = targets(rawUrl) + readerUrls(rawUrl)
+            for (url in pages) {
                 for (agent in agentsFor(url)) {
                     val html = load(url, agent) ?: continue
                     loaded = true
@@ -32,7 +33,7 @@ object SocialCountScraper {
                         followers = best.followers ?: found.followers,
                         following = best.following ?: found.following,
                     )
-                    if (best.followers != null && best.following != null) return@withContext best
+                    if (best.followers != null) return@withContext best
                 }
             }
             if (best.followers == null) {
@@ -48,10 +49,18 @@ object SocialCountScraper {
     }
 
     private fun agentsFor(url: String): List<String> {
-        return if ("facebook.com" in url || "fb.com" in url) {
-            listOf(FACEBOOK_HIT, GOOGLEBOT, MOBILE)
-        } else {
-            listOf(GOOGLEBOT, MOBILE)
+        return when {
+            "r.jina.ai" in url -> listOf(MOBILE)
+            "facebook.com" in url || "fb.com" in url -> listOf(FACEBOOK_HIT, MOBILE)
+            else -> listOf(GOOGLEBOT)
+        }
+    }
+
+    /** A public reader, used when the phone is shown a sign-in wall instead of the count. */
+    private fun readerUrls(rawUrl: String): List<String> {
+        return targets(rawUrl).map { page ->
+            val bare = page.removePrefix("https://").removePrefix("http://")
+            "https://r.jina.ai/http://$bare"
         }
     }
 
@@ -259,27 +268,15 @@ object SocialCountScraper {
             }
             "facebook.com" in host || host == "fb.com" || host.endsWith(".fb.com") -> {
                 val id = Regex("""[?&]id=(\d+)""").find(uri.rawQuery.orEmpty())?.groupValues?.get(1)
+                val parts = path.split('/').filter { it.isNotBlank() }
                 val page = when {
                     path.startsWith("profile.php") && id != null -> "profile.php?id=$id"
-                    path.startsWith("people/") -> path
-                    else -> path.substringBefore('/').ifBlank { path }
+                    parts.firstOrNull() == "people" -> parts.take(3).joinToString("/")
+                    parts.firstOrNull() == "pages" || parts.firstOrNull() == "pg" -> parts.joinToString("/")
+                    else -> parts.firstOrNull().orEmpty().ifBlank { path }
                 }
-                val web = if (page.startsWith("profile.php")) {
-                    "https://www.facebook.com/$page&locale=en_US"
-                } else {
-                    "https://www.facebook.com/$page?locale=en_US"
-                }
-                val basic = if (page.startsWith("profile.php")) {
-                    "https://mbasic.facebook.com/$page&locale=en_US"
-                } else {
-                    "https://mbasic.facebook.com/$page?locale=en_US"
-                }
-                val href = URLEncoder.encode(web.substringBefore('?'), "UTF-8")
-                listOf(
-                    web,
-                    basic,
-                    "https://www.facebook.com/plugins/page.php?href=$href&locale=en_US",
-                )
+                val href = URLEncoder.encode("https://www.facebook.com/$page", "UTF-8")
+                listOf("https://www.facebook.com/plugins/page.php?href=$href&locale=en_US")
             }
             host == "x.com" || host.endsWith(".x.com") || "twitter.com" in host -> {
                 val user = path.substringBefore('/').trim().trimStart('@')
@@ -293,8 +290,8 @@ object SocialCountScraper {
         val conn = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
             instanceFollowRedirects = true
-            connectTimeout = 15000
-            readTimeout = 20000
+            connectTimeout = 10000
+            readTimeout = 12000
             setRequestProperty("User-Agent", agent)
             setRequestProperty("Accept", "text/html,application/xhtml+xml")
             setRequestProperty("Accept-Language", "en-US,en;q=0.9")
@@ -306,7 +303,7 @@ object SocialCountScraper {
             conn.inputStream.bufferedReader().use { reader ->
                 val sb = StringBuilder()
                 val buf = CharArray(8192)
-                while (sb.length < 2_000_000) {
+                while (sb.length < 800_000) {
                     val n = reader.read(buf)
                     if (n < 0) break
                     sb.append(buf, 0, n)

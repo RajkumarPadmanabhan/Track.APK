@@ -409,7 +409,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                                 fontSize = 16.sp
                             )
                             Text(
-                                "TrackMe v${vm.currentAppVersion} · Details & info",
+                                "Track v${vm.currentAppVersion} · Details & info",
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -522,7 +522,7 @@ fun ProfileScreen(vm: TrackViewModel) {
 
         item {
             Text(
-                "TrackMe 1.0.0 · Developed by R Rajkumar padmanabhan",
+                "Track 1.0.0 · Developed by R Rajkumar padmanabhan",
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
@@ -705,7 +705,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("About TrackMe", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Text("About Track", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                     Text("v1.0.0", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                 }
             },
@@ -722,7 +722,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                     )
 
                     Text(
-                        "TrackMe is an all-in-one growth tracker designed to monitor all your social media platforms, developer repositories, and personal portfolio websites in real time.",
+                        "Track is an all-in-one growth tracker designed to monitor all your social media platforms, developer repositories, and personal portfolio websites in real time.",
                         fontSize = 12.sp,
                         lineHeight = 17.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

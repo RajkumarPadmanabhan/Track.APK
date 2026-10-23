@@ -1,6 +1,9 @@
 package com.trackme.app.data
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.net.HttpURLConnection
@@ -20,25 +23,32 @@ object NewsDataRepository {
         "https://www.hindustantimes.com/feeds/rss/india-news/rssfeed.xml",
         "https://timesofindia.indiatimes.com/rssfeedstopstories.cms",
         "https://www.thehindu.com/news/national/feeder/default.rss",
+        "https://feeds.feedburner.com/ndtvnews-top-stories",
+        "https://www.indiatoday.in/rss/home",
+        "https://www.theguardian.com/world/rss",
+        "https://rss.cnn.com/rss/edition.rss",
+        "https://feeds.npr.org/1001/rss.xml",
         "https://news.google.com/rss?hl=en-IN&gl=IN&ceid=IN:en",
     )
 
-    /** One batch per source, so the screen can show posts as soon as each feed arrives. */
-    suspend fun liveBatches(): List<List<UserNewsPost>> = withContext(Dispatchers.IO) {
-        val batches = ArrayList<List<UserNewsPost>>()
-        val api = LinkedHashMap<String, UserNewsPost>()
-        addNewsData(api)
-        if (api.isNotEmpty()) batches += api.values.toList()
+    /** Each feed is sent as soon as it arrives, including its photos. */
+    fun liveFlow(): Flow<List<UserNewsPost>> = channelFlow {
         for (feed in feeds) {
-            val posts = readFeed(feed)
-            if (posts.isNotEmpty()) batches += posts
+            launch(Dispatchers.IO) {
+                val posts = readFeed(feed)
+                if (posts.isNotEmpty()) send(posts)
+            }
         }
-        batches
+        launch(Dispatchers.IO) {
+            val api = LinkedHashMap<String, UserNewsPost>()
+            addNewsData(api)
+            if (api.isNotEmpty()) send(api.values.toList())
+        }
     }
 
     suspend fun fetchLiveNews(): List<UserNewsPost> {
         val news = LinkedHashMap<String, UserNewsPost>()
-        for (batch in liveBatches()) {
+        liveFlow().collect { batch ->
             for (post in batch) {
                 val key = post.sourceUrl.ifBlank { post.id }.lowercase()
                 if (key.isNotBlank()) news.putIfAbsent(key, post)
@@ -49,7 +59,7 @@ object NewsDataRepository {
 
     private fun addNewsData(news: LinkedHashMap<String, UserNewsPost>) {
         var pageToken: String? = null
-        repeat(8) { page ->
+        repeat(2) { page ->
             val pageQuery = pageToken?.let { "&page=${URLEncoder.encode(it, "UTF-8")}" }.orEmpty()
             val latest = "https://newsdata.io/api/1/latest?apikey=$API_KEY&language=en$pageQuery"
             val fallback = "https://newsdata.io/api/1/news?apikey=$API_KEY&language=en&q=${URLEncoder.encode("news", "UTF-8")}$pageQuery"
@@ -101,9 +111,7 @@ object NewsDataRepository {
                 ?: Regex("""(?i)<link[^>]+href=["']([^"']+)["']""").find(body)?.groupValues?.get(1)
                 ?: continue
             val description = plainText(tagText(body, "description") ?: tagText(body, "summary") ?: tagText(body, "content") ?: "")
-            val image = Regex("""(?i)(?:thumbnail|content|enclosure)[^>]*\surl=["']([^"']+)["']""")
-                .find(body)?.groupValues?.get(1)
-                ?: imageFromHtml(body)
+            val image = imageUrl(body)
             posts += UserNewsPost(
                 id = link,
                 title = plainText(title),
@@ -157,9 +165,17 @@ object NewsDataRepository {
             .trim()
     }
 
-    private fun imageFromHtml(raw: String): String? {
-        val match = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE).find(raw)
-        return match?.groupValues?.get(1)?.takeIf { it.startsWith("http") }
+    private fun imageUrl(body: String): String? {
+        val patterns = listOf(
+            """(?i)<(?:media:thumbnail|media:content|media:group|enclosure|image)\b[^>]*\b(?:url|href)=["']([^"']+)["']""",
+            """(?i)<img[^>]+src=["']([^"']+)["']""",
+        )
+        for (pattern in patterns) {
+            val raw = Regex(pattern).find(body)?.groupValues?.get(1) ?: continue
+            val url = raw.replace("&amp;", "&").trim()
+            if (url.startsWith("http")) return url
+        }
+        return null
     }
 
     private fun getJson(endpoint: String): JSONObject? {

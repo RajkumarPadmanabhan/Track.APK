@@ -99,7 +99,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             _isNewsLoading.value = true
             val seen = LinkedHashMap<String, UserNewsPost>()
-            for (batch in NewsDataRepository.liveBatches()) {
+            NewsDataRepository.liveFlow().collect { batch ->
                 for (post in batch) {
                     val key = post.sourceUrl.ifBlank { post.id }.lowercase()
                     if (key.isNotBlank()) seen.putIfAbsent(key, post)

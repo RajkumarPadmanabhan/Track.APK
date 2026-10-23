@@ -26,6 +26,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.trackme.app.data.UserNewsPost
 
 @Composable
@@ -69,7 +70,11 @@ fun NewsPostCard(post: UserNewsPost) {
             // Thumbnail Image (if provided)
             if (!post.imageUrl.isNullOrBlank()) {
                 AsyncImage(
-                    model = post.imageUrl,
+                    model = ImageRequest.Builder(context)
+                        .data(post.imageUrl)
+                        .addHeader("User-Agent", "Mozilla/5.0")
+                        .crossfade(true)
+                        .build(),
                     contentDescription = null,
                     modifier = Modifier
                         .fillMaxWidth()
