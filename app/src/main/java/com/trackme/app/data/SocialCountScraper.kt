@@ -11,7 +11,7 @@ import java.net.URLEncoder
  * Reads follower and following counts from a public page.
  * A missing count stays null. Zero is never invented when the page does not publish that number.
  */
-data class SocialCounts(val followers: String?, val following: String?)
+data class SocialCounts(val followers: String?, val following: String?, val imageUrl: String? = null)
 
 object SocialCountScraper {
     private const val GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
@@ -22,7 +22,8 @@ object SocialCountScraper {
     suspend fun fetch(rawUrl: String): SocialCounts? = withContext(Dispatchers.IO) {
         try {
             var loaded = false
-            var best = SocialCounts(null, null)
+            var best = SocialCounts(null, null, null)
+            var email: String? = null
             val pages = targets(rawUrl) + readerUrls(rawUrl)
             for (url in pages) {
                 for (agent in agentsFor(url)) {
@@ -32,14 +33,22 @@ object SocialCountScraper {
                     best = SocialCounts(
                         followers = best.followers ?: found.followers,
                         following = best.following ?: found.following,
+                        imageUrl = best.imageUrl ?: readImage(html),
                     )
-                    if (best.followers != null) return@withContext best
+                    if (email == null) email = readEmail(html)
+                    if (best.followers != null && best.imageUrl != null) return@withContext best
                 }
+            }
+            if (best.imageUrl == null && email != null) {
+                best = best.copy(imageUrl = emailPhoto(email))
             }
             if (best.followers == null) {
                 fromPublicSnippet(rawUrl)?.let { found ->
                     loaded = true
-                    best = SocialCounts(found.followers ?: best.followers, found.following ?: best.following)
+                    best = best.copy(
+                        followers = found.followers ?: best.followers,
+                        following = found.following ?: best.following,
+                    )
                 }
             }
             if (!loaded) null else best
@@ -244,6 +253,109 @@ object SocialCountScraper {
             i++
         }
         return out.toString().replace('\u00a0', ' ').replace('\u202f', ' ')
+    }
+
+    /** A real Gravatar for this email, or null when that address has no photo. */
+    fun emailPhoto(email: String): String? {
+        val clean = email.trim().lowercase()
+        if (!clean.contains("@")) return null
+        val md5 = java.security.MessageDigest.getInstance("MD5")
+            .digest(clean.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+        val url = "https://www.gravatar.com/avatar/$md5?s=256&d=404"
+        val conn = (URL(url).openConnection() as HttpURLConnection).apply {
+            instanceFollowRedirects = true
+            connectTimeout = 8000
+            readTimeout = 8000
+            setRequestProperty("User-Agent", MOBILE)
+        }
+        return try {
+            if (conn.responseCode == 200) url else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun readImage(html: String): String? {
+        for (key in listOf("profile_pic_url_hd", "profile_pic_url", "profilePicUrl", "avatar_url")) {
+            val raw = jsonString(html, key) ?: continue
+            val url = cleanImage(raw)
+            if (isProfileImage(url)) return url
+        }
+        val patterns = listOf(
+            Regex("""property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)""", RegexOption.IGNORE_CASE),
+            Regex("""content=["']([^"']+)["'][^>]*property=["']og:image(?::secure_url)?["']""", RegexOption.IGNORE_CASE),
+            Regex("""name=["']twitter:image(?::src)?["'][^>]*content=["']([^"']+)""", RegexOption.IGNORE_CASE),
+            Regex(""""profile_pic_url_hd"\s*:\s*"([^"\\]+)"""),
+            Regex(""""profile_pic_url"\s*:\s*"([^"\\]+)"""),
+            Regex(""""profilePicUrl"\s*:\s*"([^"\\]+)"""),
+            Regex(""""avatar_url"\s*:\s*"([^"\\]+)"""),
+        )
+        for (pattern in patterns) {
+            val raw = pattern.find(html)?.groupValues?.get(1) ?: continue
+            val url = cleanImage(raw)
+            if (isProfileImage(url)) return url
+        }
+        return null
+    }
+
+    private fun jsonString(html: String, key: String): String? {
+        val token = "\"$key\""
+        val idx = html.indexOf(token)
+        if (idx < 0) return null
+        val colon = html.indexOf(':', idx + token.length)
+        if (colon < 0 || colon > idx + token.length + 8) return null
+        val quote = html.indexOf('"', colon + 1)
+        if (quote < 0) return null
+        val out = StringBuilder()
+        var i = quote + 1
+        while (i < html.length && out.length < 2000) {
+            val c = html[i]
+            if (c == '\\' && i + 1 < html.length) {
+                when (val n = html[i + 1]) {
+                    '/' -> out.append('/')
+                    '"' -> out.append('"')
+                    '&' -> out.append('&')
+                    'u' -> {
+                        if (i + 5 < html.length) {
+                            html.substring(i + 2, i + 6).toIntOrNull(16)?.let { out.append(it.toChar()) }
+                            i += 6
+                            continue
+                        }
+                    }
+                    else -> out.append(n)
+                }
+                i += 2
+                continue
+            }
+            if (c == '"') return out.toString()
+            out.append(c)
+            i++
+        }
+        return null
+    }
+
+    private fun readEmail(html: String): String? {
+        val match = Regex("""mailto:([A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,})""", RegexOption.IGNORE_CASE).find(html)
+        return match?.groupValues?.get(1)?.lowercase()
+    }
+
+    private fun cleanImage(raw: String): String {
+        return raw.replace("\\/", "/")
+            .replace("\\u0026", "&")
+            .replace("&amp;", "&", ignoreCase = true)
+            .trim()
+    }
+
+    private fun isProfileImage(url: String): Boolean {
+        if (!url.startsWith("http://") && !url.startsWith("https://")) return false
+        val lower = url.lowercase()
+        if ("rsrc.php" in lower || "static.cdninstagram.com" in lower) return false
+        if ("default_profile" in lower || "emoji" in lower || lower.endsWith(".svg")) return false
+        if ("1x1" in lower || "pixel" in lower || "spacer" in lower) return false
+        return true
     }
 
     private fun targets(rawUrl: String): List<String> {

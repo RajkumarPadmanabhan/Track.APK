@@ -18,6 +18,7 @@ import com.trackme.app.data.ParsedProfile
 import com.trackme.app.data.Platform
 import com.trackme.app.data.PublicProfile
 import com.trackme.app.data.SocialApi
+import com.trackme.app.data.SocialCountScraper
 import com.trackme.app.data.SortMode
 import com.trackme.app.data.Days
 import com.trackme.app.data.combinedActivity
@@ -52,7 +53,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES, NEWS, FILES }
 
@@ -85,6 +88,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         loadBadgeState()
         refreshBadges()
         viewModelScope.launch {
+            fillEmailPhoto()
             while (true) {
                 kotlinx.coroutines.delay(1000L)
                 liveTicker = System.currentTimeMillis()
@@ -536,6 +540,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         refreshBadges()
         screen = Screen.HOME
         refreshNote = null
+        viewModelScope.launch { fillEmailPhoto() }
         return true
     }
 
@@ -554,7 +559,19 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         refreshBadges()
         screen = Screen.HOME
         refreshNote = null
+        viewModelScope.launch { fillEmailPhoto() }
         return true
+    }
+
+    private suspend fun fillEmailPhoto() {
+        val s = session ?: return
+        if (!s.avatarUrl.isNullOrBlank()) return
+        val photo = withContext(Dispatchers.IO) { SocialCountScraper.emailPhoto(s.email) } ?: return
+        val current = session ?: return
+        if (current.email != s.email || !current.avatarUrl.isNullOrBlank()) return
+        val next = current.copy(avatarUrl = photo)
+        Store.saveUser(prefs, next)
+        session = next
     }
 
     private fun badgeKey(email: String, name: String) = "${name}_$email"
@@ -1162,7 +1179,10 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             val missingSocialCount = it.count == null && (
                 it.platform == Platform.LINKEDIN || it.platform == Platform.FACEBOOK || it.platform == Platform.INSTAGRAM
                 )
-            missingSocialCount || (it.platform != Platform.X && now - it.syncedAt > 10 * 60_000L)
+            val missingPhoto = it.avatarUrl.isNullOrBlank() &&
+                it.portfolioSections.isEmpty() &&
+                !it.url.startsWith("pdf:", ignoreCase = true)
+            missingPhoto || missingSocialCount || (it.platform != Platform.X && now - it.syncedAt > 10 * 60_000L)
         }
         if (!force && !stale) return
 
@@ -1269,7 +1289,6 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 imageUrl = null,
                 stats = emptyList(),
             )
-            return
         }
         loading = true
         viewModelScope.launch {
@@ -1279,11 +1298,22 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 } else {
                     SocialApi.fetchPreview(p, parsed)
                 }
-                if (platform == p) preview = result
-            } catch (e: ApiException) {
-                if (platform == p) previewNote = e.message
-            } catch (_: Throwable) {
                 if (platform == p) {
+                    preview = if (p == Platform.PORTFOLIO) {
+                        result.copy(
+                            name = preview?.name?.takeIf { it.isNotBlank() } ?: result.name,
+                            subtitle = preview?.subtitle ?: result.subtitle,
+                            imageUrl = result.imageUrl ?: preview?.imageUrl,
+                            stats = result.stats,
+                        )
+                    } else {
+                        result
+                    }
+                }
+            } catch (e: ApiException) {
+                if (platform == p && p != Platform.PORTFOLIO) previewNote = e.message
+            } catch (_: Throwable) {
+                if (platform == p && p != Platform.PORTFOLIO) {
                     previewNote = "Couldn't read the ${p.label} profile. Showing the profile link instead."
                 }
             } finally {

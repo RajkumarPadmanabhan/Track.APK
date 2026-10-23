@@ -397,7 +397,22 @@ fun RemoteAvatar(url: String, size: Int = 72) {
             runCatching {
                 when {
                     url.startsWith("http://", ignoreCase = true) || url.startsWith("https://", ignoreCase = true) -> {
-                        URL(url).openStream().use { BitmapFactory.decodeStream(it) }
+                        val conn = (URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                            instanceFollowRedirects = true
+                            connectTimeout = 12000
+                            readTimeout = 12000
+                            setRequestProperty(
+                                "User-Agent",
+                                "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+                            )
+                            setRequestProperty("Accept", "image/avif,image/webp,image/*,*/*")
+                        }
+                        try {
+                            if (conn.responseCode !in 200..299) null
+                            else conn.inputStream.use { BitmapFactory.decodeStream(it) }
+                        } finally {
+                            conn.disconnect()
+                        }
                     }
                     url.startsWith("content://", ignoreCase = true) -> {
                         context.contentResolver.openInputStream(Uri.parse(url))?.use {

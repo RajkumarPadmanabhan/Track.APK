@@ -131,7 +131,7 @@ object SocialApi {
                 handle = "@$handle",
                 subtitle = null,
                 description = null,
-                imageUrl = null,
+                imageUrl = counts.imageUrl,
                 stats = stats,
             )
         }
