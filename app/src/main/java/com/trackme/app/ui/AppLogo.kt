@@ -26,7 +26,7 @@ import androidx.compose.ui.unit.sp
 import com.trackme.app.data.Platform
 
 enum class AppLogoKind {
-    INSTAGRAM, LINKEDIN, GITHUB, GITLAB, YOUTUBE, FACEBOOK, X,
+    INSTAGRAM, LINKEDIN, GITHUB, GITLAB, YOUTUBE, FACEBOOK, X, REDDIT, THREADS,
     PDF, WORD, EXCEL, SLIDES, IMAGE, VIDEO, WEB,
 }
 
@@ -50,6 +50,8 @@ fun appLogoKind(url: String, platform: Platform): AppLogoKind {
         "youtube.com" in host || "youtu.be" in host -> AppLogoKind.YOUTUBE
         "facebook.com" in host || host.startsWith("fb.com") -> AppLogoKind.FACEBOOK
         host == "x.com" || "twitter.com" in host -> AppLogoKind.X
+        host == "reddit.com" || host.endsWith(".reddit.com") || host == "redd.it" -> AppLogoKind.REDDIT
+        host == "threads.net" || host.endsWith(".threads.net") || host == "threads.com" || host.endsWith(".threads.com") -> AppLogoKind.THREADS
         else -> when (platform) {
             Platform.INSTAGRAM -> AppLogoKind.INSTAGRAM
             Platform.LINKEDIN -> AppLogoKind.LINKEDIN
@@ -77,6 +79,8 @@ fun AppLogo(kind: AppLogoKind, size: Dp = 62.dp) {
             AppLogoKind.YOUTUBE -> PlayMark(Color(0xFFFF0033))
             AppLogoKind.FACEBOOK -> LetterTile(Color(0xFF1877F2), "f", 28)
             AppLogoKind.X -> LetterTile(Color(0xFF111111), "X", 26)
+            AppLogoKind.REDDIT -> LetterTile(Color(0xFFFF4500), "r", 28)
+            AppLogoKind.THREADS -> LetterTile(Color(0xFF111111), "@", 26)
             AppLogoKind.PDF -> DocTile(Color(0xFFE53935), "PDF")
             AppLogoKind.WORD -> DocTile(Color(0xFF2B579A), "W")
             AppLogoKind.EXCEL -> DocTile(Color(0xFF217346), "X")
