@@ -47,19 +47,39 @@ object HttpHtml {
     }
 }
 
-/** Plain text from a profile README. A blank readme stays absent. */
+/** Prose from a profile README. Code blocks are left out, the same way Git hides them from the reading view. */
 internal fun cleanOverview(raw: String): String? {
-    val text = raw
+    val stripped = raw
         .replace(Regex("<!--[\\s\\S]*?-->"), " ")
-        .replace(Regex("```[\\s\\S]*?```"), " ")
+        .replace(Regex("```[\\s\\S]*?```"), "\n")
+        .replace(Regex("(?is)<pre\\b[^>]*>.*?</pre>"), "\n")
+        .replace(Regex("(?is)<code\\b[^>]*>.*?</code>"), "\n")
+        .replace(Regex("(?m)^( {4,}|\\t)\\S.*$"), "")
         .replace(Regex("!\\[[^\\]]*\\]\\([^)]*\\)"), " ")
         .replace(Regex("\\[([^\\]]+)\\]\\([^)]*\\)"), "$1")
+        .replace(Regex("`([^`\\n]+)`"), "$1")
         .replace(Regex("^#{1,6}\\s*", RegexOption.MULTILINE), "")
-        .replace(Regex("[*_>`]"), "")
+        .replace(Regex("[*_>]"), "")
+    val text = stripped.lineSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() && !overviewLineIsCode(it) }
+        .joinToString("\n")
         .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
     if (text.isBlank()) return null
     return text.take(1600)
+}
+
+private fun overviewLineIsCode(line: String): Boolean {
+    val t = line.trim()
+    if (t.startsWith("import ") || t.startsWith("package ") || t.startsWith("fun ") ||
+        t.startsWith("class ") || t.startsWith("def ") || t.startsWith("const ") ||
+        t.startsWith("let ") || t.startsWith("var ") || t.startsWith("public ") ||
+        t.startsWith("private ") || t.startsWith("protected ") || t.startsWith("#include") ||
+        t.startsWith("using ") || (t.startsWith("from ") && " import " in t)
+    ) return true
+    if ((t.startsWith("<") && t.endsWith(">")) || t == "{" || t == "}" || t.endsWith("{") || t.endsWith(";")) return true
+    return t.length > 12 && t.count { it in "{};=<>" } >= 3
 }
 
 /** Returns the string value, or null when the key is missing, null or blank. */

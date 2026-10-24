@@ -52,6 +52,10 @@ import com.trackme.app.data.FilePreviewer
 import com.trackme.app.data.FileStoreException
 import com.trackme.app.data.NewsTopics
 import com.trackme.app.data.UserNewsPost
+import com.trackme.app.data.VehicleBook
+import com.trackme.app.data.VehiclePaperException
+import com.trackme.app.data.VehiclePapers
+import com.trackme.app.data.VehicleRecord
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -76,6 +80,8 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     var accounts by mutableStateOf(session?.let { Store.loadAccounts(prefs, it.email) } ?: emptyList())
         private set
     var uploadedFiles by mutableStateOf(session?.let { UploadedFileStore.load(prefs, it.email) } ?: emptyList())
+        private set
+    var vehicles by mutableStateOf(session?.let { VehicleBook.load(prefs, it.email) } ?: emptyList())
         private set
 
     val totalUploadedBytes: Long
@@ -537,6 +543,12 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun selectPlatform(p: Platform) {
+        if (vehicleMode && p == platform) {
+            vehicleMode = false
+            clearVehicleDraft()
+            error = null
+            return
+        }
         if (p == platform) return
         platform = p
         resetScan()
@@ -562,6 +574,155 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         makeAsApp = false
         youtubeKeyDraft = ""
         editingYoutubeKey = false
+        vehicleMode = false
+        clearVehicleDraft()
+    }
+
+    var vehicleMode by mutableStateOf(false)
+    var vehiclePlate by mutableStateOf("")
+    var vehicleKind by mutableStateOf("car")
+    var vehicleModel by mutableStateOf("")
+    var vehicleFuel by mutableStateOf("")
+    var vehicleInsurance by mutableStateOf("")
+    var vehiclePollution by mutableStateOf("")
+    var vehicleRc by mutableStateOf("")
+    var vehicleFacts by mutableStateOf("")
+    var vehicleScanNote by mutableStateOf("")
+    var vehiclePaperKind by mutableStateOf<String?>(null)
+    var vehicleBusy by mutableStateOf(false)
+        private set
+    private val pendingPapers = linkedMapOf<String, File>()
+
+    fun openVehicleForm() {
+        vehicleMode = true
+        error = null
+    }
+
+    /** Reads a pollution, insurance, or RC image or PDF. Fills only the details that file actually contains. */
+    fun readVehiclePaper(context: Context, uri: android.net.Uri, kind: String) {
+        if (vehicleBusy) return
+        val paper = when (kind) {
+            "pollution", "rc" -> kind
+            else -> "insurance"
+        }
+        vehicleBusy = true
+        error = null
+        viewModelScope.launch {
+            val read = try {
+                withContext(Dispatchers.IO) { VehiclePapers.read(context.applicationContext, uri, paper) }
+            } catch (e: VehiclePaperException) {
+                vehicleBusy = false
+                error = e.message
+                return@launch
+            } catch (_: Exception) {
+                vehicleBusy = false
+                error = "Couldn't read that file."
+                return@launch
+            }
+            val typed = VehicleBook.normalize(vehiclePlate)
+            val foundPlate = read.plate
+            val rejected = when {
+                !VehicleBook.isPlate(typed) -> "Type the vehicle number before adding a document."
+                !read.related -> "This file does not look like a vehicle document."
+                foundPlate == null -> "The vehicle number in this file could not be read."
+                foundPlate != typed -> "This file is for $foundPlate, not the number you typed."
+                else -> null
+            }
+            if (rejected != null) {
+                read.file.delete()
+                vehicleBusy = false
+                error = rejected
+                return@launch
+            }
+            pendingPapers.remove(paper)?.delete()
+            pendingPapers[paper] = read.file
+            if (vehicleModel.isBlank() && !read.model.isNullOrBlank()) vehicleModel = read.model
+            if (vehicleFuel.isBlank() && !read.fuel.isNullOrBlank()) vehicleFuel = read.fuel
+            if (!read.insuranceOn.isNullOrBlank()) vehicleInsurance = read.insuranceOn
+            if (!read.pollutionOn.isNullOrBlank()) vehiclePollution = read.pollutionOn
+            if (!read.rcOn.isNullOrBlank()) vehicleRc = read.rcOn
+            val title = when (paper) {
+                "pollution" -> "Pollution test"
+                "rc" -> "RC book"
+                else -> "Insurance"
+            }
+            val block = read.facts.joinToString("\n") { "$title · $it" }
+            if (block.isNotBlank()) vehicleFacts = VehicleBook.mergeFacts(vehicleFacts, block)
+            val watched = listOfNotNull(
+                VehicleBook.watch("Insurance", vehicleInsurance)?.text,
+                VehicleBook.watch("Pollution test", vehiclePollution)?.text,
+                VehicleBook.watch("RC", vehicleRc)?.text,
+            )
+            vehicleScanNote = when {
+                watched.isNotEmpty() -> watched.joinToString("\n")
+                read.facts.isNotEmpty() -> "The file was read. No expiry date was found, so type the date below."
+                else -> "The file was read. Type any date it did not fill in."
+            }
+            vehicleBusy = false
+            error = null
+        }
+    }
+
+    fun addVehicle(): Boolean {
+        val plate = VehicleBook.normalize(vehiclePlate)
+        if (!VehicleBook.isPlate(plate)) {
+            error = "Enter a plate like KL01AB1234."
+            return false
+        }
+        val email = session?.email ?: return false
+        val existing = vehicles.firstOrNull { it.plate == plate }
+        val id = existing?.id ?: java.util.UUID.randomUUID().toString()
+        val app = getApplication<Application>()
+        val insuranceFile = pendingPapers.remove("insurance")?.let {
+            VehiclePapers.adopt(app, id, "insurance", it, existing?.insuranceFile.orEmpty())
+        } ?: existing?.insuranceFile.orEmpty()
+        val pollutionFile = pendingPapers.remove("pollution")?.let {
+            VehiclePapers.adopt(app, id, "pollution", it, existing?.pollutionFile.orEmpty())
+        } ?: existing?.pollutionFile.orEmpty()
+        val rcFile = pendingPapers.remove("rc")?.let {
+            VehiclePapers.adopt(app, id, "rc", it, existing?.rcFile.orEmpty())
+        } ?: existing?.rcFile.orEmpty()
+        val row = VehicleRecord(
+            id = id,
+            plate = plate,
+            kind = if (vehicleKind == "bike") "bike" else "car",
+            model = vehicleModel.trim().ifBlank { existing?.model.orEmpty() }.take(40),
+            fuel = vehicleFuel.trim().ifBlank { existing?.fuel.orEmpty() }.take(24),
+            insuranceOn = vehicleInsurance.trim().ifBlank { existing?.insuranceOn.orEmpty() }.take(24),
+            pollutionOn = vehiclePollution.trim().ifBlank { existing?.pollutionOn.orEmpty() }.take(24),
+            rcOn = vehicleRc.trim().ifBlank { existing?.rcOn.orEmpty() }.take(24),
+            facts = VehicleBook.mergeFacts(existing?.facts.orEmpty(), vehicleFacts),
+            insuranceFile = insuranceFile,
+            pollutionFile = pollutionFile,
+            rcFile = rcFile,
+        )
+        vehicles = listOf(row) + vehicles.filter { it.plate != plate && it.id != row.id }
+        VehicleBook.save(prefs, email, vehicles)
+        closeAdd()
+        return true
+    }
+
+    fun deleteVehicle(id: String) {
+        val email = session?.email ?: return
+        vehicles = vehicles.filter { it.id != id }
+        VehicleBook.save(prefs, email, vehicles)
+        VehiclePapers.deleteStored(getApplication(), id)
+    }
+
+    private fun clearVehicleDraft() {
+        pendingPapers.values.forEach { it.delete() }
+        pendingPapers.clear()
+        vehiclePlate = ""
+        vehicleKind = "car"
+        vehicleModel = ""
+        vehicleFuel = ""
+        vehicleInsurance = ""
+        vehiclePollution = ""
+        vehicleRc = ""
+        vehicleFacts = ""
+        vehicleScanNote = ""
+        vehiclePaperKind = null
+        vehicleBusy = false
     }
 
     var makeAsApp by mutableStateOf(false)
@@ -639,6 +800,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         session = s
         accounts = Store.loadAccounts(prefs, e)
         uploadedFiles = UploadedFileStore.load(prefs, e)
+        vehicles = VehicleBook.load(prefs, e)
         loadBadgeState()
         refreshBadges()
         screen = Screen.HOME
@@ -658,6 +820,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         session = s
         accounts = Store.loadAccounts(prefs, e)
         uploadedFiles = UploadedFileStore.load(prefs, e)
+        vehicles = VehicleBook.load(prefs, e)
         loadBadgeState()
         refreshBadges()
         screen = Screen.HOME
@@ -818,6 +981,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 ?.let { updateThemeColor(it) }
             accounts = Store.loadAccounts(prefs, email)
             uploadedFiles = UploadedFileStore.load(prefs, email)
+            vehicles = VehicleBook.load(prefs, email)
             refreshBadges()
             android.widget.Toast.makeText(context, "Backup restored", android.widget.Toast.LENGTH_SHORT).show()
         }
@@ -830,6 +994,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         session = null
         accounts = emptyList()
         uploadedFiles = emptyList()
+        vehicles = emptyList()
         earnedBadges = emptyList()
         pinnedBadgeIds = emptyList()
         verified = false
@@ -885,6 +1050,21 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 "open" -> if (id.isNotBlank()) openAccount(id)
                 "refresh" -> refreshAccounts(true)
                 "scan" -> addFromDesktop(id)
+                "update" -> updateFromDesktop(id)
+                "delete" -> {
+                    if (accounts.any { it.id == id }) {
+                        removeAccount(id)
+                        if (detailId == id) closeDetail()
+                        desktopNote = "Removed on the phone"
+                    }
+                }
+                "delete-file" -> {
+                    val file = uploadedFiles.firstOrNull { it.id == id }
+                    if (file != null) {
+                        deleteUploadedFile(getApplication(), file)
+                        desktopNote = "File removed on the phone"
+                    }
+                }
                 "theme" -> {
                     val option = com.trackme.app.ui.ThemeColorOption.entries.firstOrNull {
                         it.name.equals(id, ignoreCase = true)
@@ -941,11 +1121,6 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                 put("sections", sections)
             })
         }
-        val news = JSONArray()
-        newsFeed.value.take(40).forEach { post ->
-            news.put(JSONObject().put("title", post.title).put("source", post.sourceName).put("url", post.sourceUrl))
-        }
-        root.put("news", news)
         val files = JSONArray()
         uploadedFiles.forEach { file ->
             files.put(
@@ -961,11 +1136,38 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         root.put("cost", if (expenseEnabled) ExpenseBook.money(spentNow) else "")
         root.put("limit", if (expenseEnabled && expenseLimit > 0.0) ExpenseBook.money(expenseLimit) else "")
         root.put("costHot", expenseEnabled && expenseLimit > 0.0 && spentNow >= expenseLimit)
+        val series = JSONArray()
+        com.trackme.app.data.activityTotals(accounts.filter { !it.isHidden }).forEach { series.put(it) }
+        root.put("series", series)
         root.put("alive", true)
         root.put("theme", themeColorName)
         root.put("themeMode", themeModeName)
         if (!desktopNote.isNullOrBlank()) root.put("note", desktopNote)
         return root.toString()
+    }
+
+    /** Re-reads one saved profile from the computer and stores what the page still publishes. */
+    private fun updateFromDesktop(id: String) {
+        val acc = accounts.firstOrNull { it.id == id } ?: return
+        desktopNote = "Updating…"
+        val key = youtubeKey.trim()
+        viewModelScope.launch {
+            desktopNote = try {
+                val snap = Sync.fetch(acc, key)
+                if (snap == null) {
+                    "Couldn't update that profile"
+                } else {
+                    val fresh = newAccount(acc.platform, ParsedProfile(acc.handle, acc.url), snap)
+                    accounts = accounts.map { if (it.id == id) it.mergeWith(fresh) else it }
+                    persist()
+                    "Updated on the phone"
+                }
+            } catch (e: ApiException) {
+                e.message ?: "Couldn't update that profile"
+            } catch (_: Exception) {
+                "Couldn't update that profile"
+            }
+        }
     }
 
     /** A link typed on the computer is scanned and saved on this phone. */

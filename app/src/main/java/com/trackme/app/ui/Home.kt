@@ -17,6 +17,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -43,7 +46,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import kotlin.random.Random
 import androidx.compose.material.icons.filled.CheckCircle
@@ -93,6 +95,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -202,6 +205,9 @@ fun HomeScreen(vm: TrackViewModel) {
     var appSearch by remember { mutableStateOf(false) }
     var appQuery by remember { mutableStateOf("") }
     var appToDelete by remember { mutableStateOf<TrackedAccount?>(null) }
+    var vehicleTab by remember { mutableStateOf(false) }
+    var openVehicle by remember { mutableStateOf<com.trackme.app.data.VehicleRecord?>(null) }
+    var vehicleToDelete by remember { mutableStateOf<com.trackme.app.data.VehicleRecord?>(null) }
     val context = LocalContext.current
     var selectedGroupForPopup by remember { mutableStateOf<List<TrackedAccount>?>(null) }
 
@@ -275,7 +281,8 @@ fun HomeScreen(vm: TrackViewModel) {
                 )
             }
 
-            if (appAccounts.isNotEmpty()) {
+            if (appAccounts.isNotEmpty() || vm.vehicles.isNotEmpty()) {
+                val showingVehicles = if (appAccounts.isEmpty()) true else vehicleTab
                 val shownApps = appAccounts.filter { acc ->
                     val q = appQuery.trim()
                     if (!appSearch || q.isBlank()) true
@@ -289,9 +296,23 @@ fun HomeScreen(vm: TrackViewModel) {
                         Modifier.fillMaxWidth().padding(top = 4.dp).markTour("apps"),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text("Apps", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "Apps",
+                            fontSize = 22.sp,
+                            fontWeight = if (showingVehicles) FontWeight.Medium else FontWeight.Bold,
+                            color = if (showingVehicles) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.clickable { vehicleTab = false },
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            "Vehicles",
+                            fontSize = 22.sp,
+                            fontWeight = if (showingVehicles) FontWeight.Bold else FontWeight.Medium,
+                            color = if (showingVehicles) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.clickable { vehicleTab = true },
+                        )
                         Spacer(Modifier.weight(1f))
-                        IconButton(onClick = {
+                        if (!showingVehicles) IconButton(onClick = {
                             appSearch = !appSearch
                             if (!appSearch) appQuery = ""
                         }) {
@@ -302,7 +323,7 @@ fun HomeScreen(vm: TrackViewModel) {
                         }
                     }
                 }
-                if (appSearch) {
+                if (appSearch && !showingVehicles) {
                     item {
                         OutlinedTextField(
                             value = appQuery,
@@ -315,7 +336,21 @@ fun HomeScreen(vm: TrackViewModel) {
                     }
                 }
                 item {
-                    if (shownApps.isEmpty()) {
+                    if (showingVehicles) {
+                        if (vm.vehicles.isEmpty()) {
+                            Text("No vehicles yet.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
+                        } else {
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                                items(vm.vehicles, key = { it.id }) { vehicle ->
+                                    VehicleIcon(
+                                        vehicle,
+                                        onClick = { openVehicle = vehicle },
+                                        onLongClick = { vehicleToDelete = vehicle },
+                                    )
+                                }
+                            }
+                        }
+                    } else if (shownApps.isEmpty()) {
                         Text("No app with that name.", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 13.sp)
                     } else {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -455,6 +490,48 @@ fun HomeScreen(vm: TrackViewModel) {
             item { Spacer(Modifier.height(8.dp)) }
         }
 
+        openVehicle?.let { vehicle ->
+            val lines = com.trackme.app.data.VehicleBook.lines(vehicle)
+            val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+            AlertDialog(
+                onDismissRequest = { openVehicle = null },
+                title = { Text(vehicle.plate) },
+                text = {
+                    Column(Modifier.heightIn(max = 360.dp).verticalScroll(rememberScrollState())) {
+                        lines.forEach { line ->
+                            val color = when (line.urgency) {
+                                com.trackme.app.data.PaperUrgency.OVERDUE -> MaterialTheme.colorScheme.error
+                                com.trackme.app.data.PaperUrgency.DUE -> if (dark) Color(0xFFFFB074) else Color(0xFFC2410C)
+                                com.trackme.app.data.PaperUrgency.OK -> if (dark) Color(0xFF7DCEA0) else Color(0xFF166534)
+                                com.trackme.app.data.PaperUrgency.NONE -> MaterialTheme.colorScheme.onSurface
+                            }
+                            Text(line.text, color = color, fontSize = 14.sp)
+                            Spacer(Modifier.height(4.dp))
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { openVehicle = null }) { Text("Close") }
+                },
+            )
+        }
+        vehicleToDelete?.let { vehicle ->
+            AlertDialog(
+                onDismissRequest = { vehicleToDelete = null },
+                title = { Text("Remove this vehicle?") },
+                text = { Text("${vehicle.plate} is deleted from this phone only.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        vm.deleteVehicle(vehicle.id)
+                        vehicleToDelete = null
+                        openVehicle = null
+                    }) { Text("Remove") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { vehicleToDelete = null }) { Text("Cancel") }
+                },
+            )
+        }
         appToDelete?.let { acc ->
             AlertDialog(
                 onDismissRequest = { appToDelete = null },
@@ -493,6 +570,73 @@ fun HomeScreen(vm: TrackViewModel) {
                 onTogglePin = { vm.togglePinnedBadge(it) },
                 onDismiss = { showBadges = false },
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun VehicleIcon(
+    vehicle: com.trackme.app.data.VehicleRecord,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    Column(
+        modifier = Modifier.width(76.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            Modifier
+                .size(62.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .background(if (vehicle.kind == "bike") Color(0xFFD7E8FF) else Color(0xFFCFFAE4)),
+            contentAlignment = Alignment.Center,
+        ) {
+            VehicleGlyph(vehicle.kind == "bike", Modifier.size(34.dp))
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            vehicle.plate,
+            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (com.trackme.app.data.VehicleBook.warn(vehicle)) {
+            Text(
+                "Due",
+                color = MaterialTheme.colorScheme.error,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+@Composable
+private fun VehicleGlyph(bike: Boolean, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val ink = Color(0xFF121212)
+        if (bike) {
+            drawCircle(ink, size.minDimension * 0.16f, Offset(size.width * 0.28f, size.height * 0.68f), style = Stroke(width = size.minDimension * 0.07f))
+            drawCircle(ink, size.minDimension * 0.16f, Offset(size.width * 0.74f, size.height * 0.68f), style = Stroke(width = size.minDimension * 0.07f))
+            drawLine(ink, Offset(size.width * 0.28f, size.height * 0.68f), Offset(size.width * 0.48f, size.height * 0.38f), size.minDimension * 0.07f, StrokeCap.Round)
+            drawLine(ink, Offset(size.width * 0.48f, size.height * 0.38f), Offset(size.width * 0.74f, size.height * 0.68f), size.minDimension * 0.07f, StrokeCap.Round)
+            drawLine(ink, Offset(size.width * 0.48f, size.height * 0.38f), Offset(size.width * 0.66f, size.height * 0.28f), size.minDimension * 0.07f, StrokeCap.Round)
+        } else {
+            drawRoundRect(
+                ink,
+                topLeft = Offset(size.width * 0.12f, size.height * 0.42f),
+                size = Size(size.width * 0.76f, size.height * 0.28f),
+                cornerRadius = CornerRadius(size.minDimension * 0.12f, size.minDimension * 0.12f),
+            )
+            drawCircle(Color.White, size.minDimension * 0.09f, Offset(size.width * 0.30f, size.height * 0.74f))
+            drawCircle(Color.White, size.minDimension * 0.09f, Offset(size.width * 0.72f, size.height * 0.74f))
+            drawCircle(ink, size.minDimension * 0.09f, Offset(size.width * 0.30f, size.height * 0.74f), style = Stroke(width = size.minDimension * 0.045f))
+            drawCircle(ink, size.minDimension * 0.09f, Offset(size.width * 0.72f, size.height * 0.74f), style = Stroke(width = size.minDimension * 0.045f))
         }
     }
 }
@@ -743,7 +887,7 @@ private fun HeroTile(
     }
     val currentBg = bgColors[bgIndex % bgColors.size]
     val ink = Brand.Ink
-    val series = remember(accounts) { activityCountSeries(accounts) }
+    val series = remember(accounts) { com.trackme.app.data.activityTotals(accounts).map { it.toFloat() } }
     Column(
         Modifier
             .fillMaxWidth()
@@ -778,14 +922,14 @@ private fun HeroTile(
         }
         Spacer(Modifier.height(6.dp))
         if (showChart && !monkeyOn) {
-            ActivityGraph(series, ink, Modifier.fillMaxWidth().height(72.dp))
+            ActivityGraph(series, ink, Modifier.fillMaxWidth().height(108.dp))
         }
         if (monkeyOn) {
             MonkeyRun(
                 jumpToken = jumpToken,
                 ink = ink,
                 onOut = { monkeyOn = false },
-                modifier = Modifier.fillMaxWidth().height(72.dp),
+                modifier = Modifier.fillMaxWidth().height(108.dp),
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -852,7 +996,7 @@ private fun HeroTile(
     }
 }
 
-/** Bars and a line from saved daily counts. Height and strength follow that day's count. */
+/** Long bars from saved daily counts. A day with no count stays on the baseline. */
 @Composable
 private fun ActivityGraph(series: List<Float>, color: Color, modifier: Modifier = Modifier) {
     val draw = remember { Animatable(0f) }
@@ -865,98 +1009,33 @@ private fun ActivityGraph(series: List<Float>, color: Color, modifier: Modifier 
         if (n < 2 || size.width < 2f || size.height < 2f) return@Canvas
         val max = series.max().coerceAtLeast(0f)
         val shown = (n * draw.value).coerceIn(0f, n.toFloat())
-        val gap = 5.dp.toPx()
-        val bw = ((size.width - gap * (n - 1)) / n).coerceAtLeast(3f)
+        val gap = 7.dp.toPx()
+        val bw = ((size.width - gap * (n - 1)) / n).coerceAtMost(16.dp.toPx()).coerceAtLeast(3f)
+        val used = n * bw + gap * (n - 1)
+        val origin = ((size.width - used) / 2f).coerceAtLeast(0f)
         val floor = size.height - 2.dp.toPx()
-        val plot = (floor - 10.dp.toPx()).coerceAtLeast(8f)
-        fun barHeight(v: Float): Float {
-            if (max <= 0f || v <= 0f) return 0f
-            return plot * (v / max).coerceIn(0f, 1f)
-        }
+        val plot = (floor - 4.dp.toPx()).coerceAtLeast(8f)
+        val radius = 7.dp.toPx()
         drawLine(
-            color = color.copy(alpha = 0.2f),
+            color = color.copy(alpha = 0.18f),
             start = Offset(0f, floor),
             end = Offset(size.width, floor),
             strokeWidth = 1.5.dp.toPx(),
             cap = StrokeCap.Round,
         )
-        val peak = series.indices.maxByOrNull { series[it] } ?: 0
         series.forEachIndexed { i, v ->
-            if (i.toFloat() > shown || v <= 0f) return@forEachIndexed
+            if (i.toFloat() > shown || max <= 0f || v <= 0f) return@forEachIndexed
             val fade = if (i + 1f > shown) (shown - i).coerceIn(0f, 1f) else 1f
             val share = (v / max).coerceIn(0f, 1f)
-            val h = barHeight(v) * fade
-            val left = i * (bw + gap)
+            val h = (plot * share * fade).coerceAtLeast(8f)
+            val left = origin + i * (bw + gap)
             drawRoundRect(
-                color = color.copy(alpha = (0.22f + 0.62f * share) * fade),
+                color = color.copy(alpha = (0.28f + 0.72f * share) * fade),
                 topLeft = Offset(left, floor - h),
                 size = Size(bw, h),
-                cornerRadius = CornerRadius(bw / 2f, bw / 2f),
+                cornerRadius = CornerRadius(radius, radius),
             )
-            if (i == peak && share > 0f) {
-                drawCircle(
-                    color = color,
-                    radius = (bw * 0.42f).coerceAtLeast(3f),
-                    center = Offset(left + bw / 2f, floor - h),
-                )
-            }
         }
-        val points = series.mapIndexed { i, v ->
-            Offset(i * (bw + gap) + bw / 2f, floor - barHeight(v))
-        }
-        val last = kotlin.math.floor(shown.toDouble()).toInt().coerceIn(0, points.lastIndex)
-        val visible = points.take(last + 1).toMutableList()
-        val frac = (shown - last).coerceIn(0f, 1f)
-        if (frac > 0.01f && last < points.lastIndex) {
-            val a = points[last]
-            val b = points[last + 1]
-            visible.add(Offset(a.x + (b.x - a.x) * frac, a.y + (b.y - a.y) * frac))
-        }
-        if (visible.size < 2) return@Canvas
-        val line = Path().apply {
-            moveTo(visible.first().x, visible.first().y)
-            for (i in 1 until visible.size) {
-                val prev = visible[i - 1]
-                val cur = visible[i]
-                val cx = (prev.x + cur.x) / 2f
-                quadraticBezierTo(cx, prev.y, cx, (prev.y + cur.y) / 2f)
-                quadraticBezierTo(cx, cur.y, cur.x, cur.y)
-            }
-        }
-        val fill = Path().apply {
-            addPath(line)
-            lineTo(visible.last().x, floor)
-            lineTo(visible.first().x, floor)
-            close()
-        }
-        drawPath(fill, color.copy(alpha = 0.16f))
-        drawPath(
-            line,
-            color,
-            style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
-        )
-    }
-}
-
-/** Daily total of saved counts. A day stays at the last count until a new one is saved. */
-private fun activityCountSeries(accounts: List<TrackedAccount>, days: Int = 18): List<Float> {
-    val keys = (days - 1 downTo 0).map { Days.key(-it) }
-    val carried = HashMap<String, Long>()
-    val started = HashSet<String>()
-    return keys.map { key ->
-        var total = 0.0
-        for (acc in accounts) {
-            if (acc.platform.fullScan) {
-                total += (acc.activity[key] ?: 0).toDouble()
-            } else {
-                acc.history[key]?.let {
-                    carried[acc.id] = it
-                    started.add(acc.id)
-                }
-                if (acc.id in started) total += (carried[acc.id] ?: 0L).toDouble()
-            }
-        }
-        total.toFloat()
     }
 }
 
@@ -1315,11 +1394,14 @@ private fun AccountCard(
                             color = ink, fontWeight = FontWeight.Bold, fontSize = 17.sp,
                             maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
-                        Text(
-                            acc.tagLine(),
-                            color = ink.copy(alpha = 0.6f), fontSize = 12.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
+                        val line = acc.tagLine()
+                        if (line.isNotBlank()) {
+                            Text(
+                                line,
+                                color = ink.copy(alpha = 0.6f), fontSize = 12.sp,
+                                maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                     if (canMoveForward || canMoveBack) {
                         Column {
@@ -1434,11 +1516,14 @@ private fun GridAccountCard(acc: TrackedAccount, color: Color, onToggleVisibilit
                     color = ink, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                     maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    acc.tagLine(withPlatform = false),
-                    color = ink.copy(alpha = 0.6f), fontSize = 11.sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+                val line = acc.tagLine(withPlatform = false)
+                if (line.isNotBlank()) {
+                    Text(
+                        line,
+                        color = ink.copy(alpha = 0.6f), fontSize = 11.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             IconButton(onClick = onToggleVisibility, modifier = Modifier.size(32.dp)) {
                 Icon(
@@ -1515,11 +1600,14 @@ private fun StackedGridAccountCard(
                             color = ink, fontWeight = FontWeight.Bold, fontSize = 14.sp,
                         maxLines = 1, overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                            acc.tagLine(withPlatform = false),
+                    val line = acc.tagLine(withPlatform = false)
+                    if (line.isNotBlank()) {
+                        Text(
+                            line,
                             color = ink.copy(alpha = 0.6f), fontSize = 11.sp,
-                        maxLines = 1, overflow = TextOverflow.Ellipsis,
-                    )
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
                     Text("+${group.size - 1}", color = ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
             }

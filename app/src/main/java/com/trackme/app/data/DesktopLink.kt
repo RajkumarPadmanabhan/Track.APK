@@ -426,9 +426,13 @@ body:not(.page-open){overflow:hidden}
 #page h2{font-size:clamp(1.6rem,4vw,2.4rem);font-weight:400;letter-spacing:-1px;margin-bottom:18px}
 #page p.lead{color:var(--muted);max-width:62ch;line-height:1.6;margin-top:16px}
 .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-top:26px}
-.c{background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:22px;cursor:pointer}
-.c b{display:block;font-size:1.6rem;font-weight:500;letter-spacing:-.5px}
-.c span{color:var(--muted);font-size:.85rem}
+.c{background:var(--panel);border:1px solid var(--line);border-radius:24px;padding:22px;cursor:pointer;min-width:0;overflow:hidden}
+.c b{display:block;font-size:1.35rem;font-weight:500;letter-spacing:-.4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.c span{display:block;color:var(--muted);font-size:.85rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acts{display:flex;gap:8px;margin-top:14px}
+.acts button{border:1px solid var(--line);background:transparent;color:var(--text);border-radius:99px;padding:6px 12px;cursor:pointer;font:inherit;font-size:.8rem}
+.bars{display:flex;align-items:flex-end;gap:6px;height:180px;margin-top:28px;border-bottom:1px solid var(--line)}
+.bars i{flex:1;display:block;background:var(--lime);border-radius:12px 12px 4px 4px;min-width:0}
 .c.hot b{color:#ff5a6a}
 .row{display:flex;gap:8px;margin-top:18px}
 .row input{flex:1;border:1px solid var(--line);border-radius:99px;padding:12px 16px;background:#1d1d2a;color:#fff}
@@ -477,7 +481,6 @@ body:not(.page-open){overflow:hidden}
     <div class="pill"><div class="in">
       <a href="#home" class="on">Home</a>
       <a href="#activity">Activity</a>
-      <a href="#news">News</a>
       <a href="#files">Files</a>
       <a href="#scan">Scan</a>
       <a href="#features">Features</a>
@@ -498,13 +501,9 @@ body:not(.page-open){overflow:hidden}
   </section>
   <section id="activity">
     <h2>Activity</h2>
-    <p class="lead">Bars and the graph on the phone follow saved counts. Cost is this month only, and it turns red when the limit is reached.</p>
-    <div class="cards" id="activity-cards"></div>
-  </section>
-  <section id="news">
-    <h2>News</h2>
-    <p class="lead">Headlines from the phone. Swipe left on the phone to open this page there.</p>
-    <div class="list" id="news-list"></div>
+    <p class="lead">Each bar is one day. A taller bar is a day with more saved activity. A day with nothing saved stays on the line.</p>
+    <div class="bars" id="activity-graph"></div>
+    <p class="lead" id="activity-cost"></p>
   </section>
   <section id="files">
     <h2>Files</h2>
@@ -529,7 +528,7 @@ body:not(.page-open){overflow:hidden}
       <div class="item"><b>Appearance</b><span>Light, dark, or system, plus an accent color.</span></div>
       <div class="item"><b>Verified</b><span>The blue seal appears after the promo code.</span></div>
     </div>
-    <a class="btn" href="https://github.com/RajkumarPadmanabhan/Track.APK/releases/download/v1.3.22/TrackMe-v1.3.22.apk">Download APK</a>
+    <a class="btn" href="https://github.com/RajkumarPadmanabhan/Track.APK/releases/download/v1.3.23/TrackMe-v1.3.23.apk">Download APK</a>
   </section>
 </main>
 <script>
@@ -542,6 +541,8 @@ document.getElementById("add").onsubmit = function (e) {
   box.value = "";
 };
 function act(type, id) {
+  if (type === "delete" && !confirm("Remove this profile from the phone?")) return;
+  if (type === "delete-file" && !confirm("Remove this file from the phone?")) return;
   fetch("/api/act?t=" + encodeURIComponent(token), {
     method: "POST",
     headers: {"Content-Type": "application/json"},
@@ -566,27 +567,30 @@ function draw(s) {
   document.getElementById("live").textContent = s.note || "Live with your phone";
   var home = "";
   (s.accounts || []).forEach(function (a) {
-    home += '<div class="c" data-id="' + esc(a.id) + '" onclick="act(\'open\', this.getAttribute(\'data-id\'))"><b>' + esc(a.name || a.handle || a.platform) + '</b><span>' + esc(a.platform);
+    var id = esc(a.id);
+    home += '<div class="c" data-id="' + id + '" onclick="act(\'open\', this.getAttribute(\'data-id\'))"><b>' + esc(a.name || a.handle || a.platform) + '</b><span>' + esc(a.platform);
     if (a.count) home += ' · ' + esc(a.count) + ' ' + esc(a.countLabel);
-    home += '</span></div>';
+    home += '</span><div class="acts"><button type="button" onclick="event.stopPropagation();act(\'update\', this.parentNode.parentNode.getAttribute(\'data-id\'))">Update</button>';
+    home += '<button type="button" onclick="event.stopPropagation();act(\'delete\', this.parentNode.parentNode.getAttribute(\'data-id\'))">Delete</button></div></div>';
   });
   document.getElementById("home-cards").innerHTML = home || '<div class="item"><span>No tags yet. Paste a link under Scan.</span></div>';
-  var actCards = "";
-  if (s.cost) actCards += '<div class="c' + (s.costHot ? ' hot' : '') + '"><b>' + esc(s.cost) + '</b><span>Cost' + (s.limit ? ' of ' + esc(s.limit) : '') + '</span></div>';
-  (s.accounts || []).forEach(function (a) {
-    if (!a.count) return;
-    actCards += '<div class="c"><b>' + esc(a.count) + '</b><span>' + esc(a.name || a.platform) + ' · ' + esc(a.countLabel) + '</span></div>';
+  var series = s.series || [];
+  var max = 0;
+  series.forEach(function (n) { if (n > max) max = n; });
+  var bars = "";
+  series.forEach(function (n) {
+    var h = max > 0 && n > 0 ? Math.max(12, Math.round(n / max * 100)) : 0;
+    bars += '<i style="height:' + h + '%"></i>';
   });
-  document.getElementById("activity-cards").innerHTML = actCards || '<div class="item"><span>Counts appear after the phone reads a profile.</span></div>';
-  var news = "";
-  (s.news || []).forEach(function (n) {
-    news += '<a class="item" href="' + esc(n.url) + '" target="_blank"><b>' + esc(n.title) + '</b><span>' + esc(n.source) + '</span></a>';
-  });
-  document.getElementById("news-list").innerHTML = news || '<div class="item"><span>No headlines yet.</span></div>';
+  document.getElementById("activity-graph").innerHTML = bars;
+  var costLine = "";
+  if (s.cost) costLine = "Cost this month " + s.cost + (s.limit ? " of " + s.limit : "") + (s.costHot ? ". The limit is reached." : ".");
+  document.getElementById("activity-cost").textContent = costLine;
   var files = "";
   (s.files || []).forEach(function (f) {
     var where = f.folder ? esc(f.folder) + ' / ' : '';
-    files += '<div class="item"><b>' + where + esc(f.name) + '</b><span>' + esc(f.size) + '</span></div>';
+    files += '<div class="item" data-id="' + esc(f.id) + '"><b>' + where + esc(f.name) + '</b><span>' + esc(f.size) + '</span>';
+    files += '<div class="acts"><button type="button" onclick="act(\'delete-file\', this.parentNode.parentNode.getAttribute(\'data-id\'))">Delete</button></div></div>';
   });
   document.getElementById("files-list").innerHTML = files || '<div class="item"><span>No files uploaded yet.</span></div>';
 }

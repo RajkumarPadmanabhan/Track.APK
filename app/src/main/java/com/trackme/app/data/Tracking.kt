@@ -260,7 +260,10 @@ fun TrackedAccount.tagLine(withPlatform: Boolean = true): String {
     val mail = linkedEmail?.trim()?.takeIf {
         it.contains("@") && (platform == Platform.AMAZON || platform == Platform.FLIPKART)
     }
-    val who = mail ?: "@${handle.trimStart('@')}"
+    if (mail != null) return if (withPlatform) "${platform.label} · $mail" else mail
+    val nameAlreadyShown = platform == Platform.YOUTUBE || platform == Platform.INSTAGRAM || platform == Platform.PORTFOLIO
+    if (nameAlreadyShown) return if (withPlatform) platform.label else ""
+    val who = "@${handle.trimStart('@')}"
     return if (withPlatform) "${platform.label} · $who" else who
 }
 
@@ -288,6 +291,28 @@ fun TrackedAccount.spark(days: Int = 14): List<Float> {
     return (days - 1 downTo 0).map { off ->
         history[Days.key(-off)]?.let { carried = it }
         (carried ?: fallback ?: 0L).toFloat()
+    }
+}
+
+/** One total per day, oldest first. A social count stays until a newer one is saved. */
+fun activityTotals(accounts: List<TrackedAccount>, days: Int = 18): List<Long> {
+    val keys = (days - 1 downTo 0).map { Days.key(-it) }
+    val carried = HashMap<String, Long>()
+    val started = HashSet<String>()
+    return keys.map { key ->
+        var total = 0L
+        for (acc in accounts) {
+            if (acc.platform.fullScan) {
+                total += (acc.activity[key] ?: 0).toLong()
+            } else {
+                acc.history[key]?.let {
+                    carried[acc.id] = it
+                    started.add(acc.id)
+                }
+                if (acc.id in started) total += carried[acc.id] ?: 0L
+            }
+        }
+        total
     }
 }
 

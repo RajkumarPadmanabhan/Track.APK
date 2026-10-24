@@ -48,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -137,7 +138,16 @@ fun AddTagSheet(vm: TrackViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                Platform.values().filter { it != Platform.AMAZON && it != Platform.FLIPKART }.forEach { option ->
+                FilterChip(
+                    selected = vm.vehicleMode,
+                    onClick = { vm.openVehicleForm() },
+                    label = { Text("Vehicle") },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = Color(0xFF9EE6C8),
+                        selectedLabelColor = Color.Black,
+                    ),
+                )
+                if (!vm.vehicleMode) Platform.values().filter { it != Platform.AMAZON && it != Platform.FLIPKART }.forEach { option ->
                     FilterChip(
                         selected = p == option,
                         onClick = { vm.selectPlatform(option) },
@@ -160,6 +170,9 @@ fun AddTagSheet(vm: TrackViewModel) {
                 }
             }
 
+            if (vm.vehicleMode) {
+                VehicleEntry(vm)
+            } else {
             OutlinedTextField(
                 value = vm.input,
                 onValueChange = {
@@ -353,8 +366,148 @@ fun AddTagSheet(vm: TrackViewModel) {
                     )
                 }
             }
+            }
         }
     }
+}
+
+@Composable
+private fun VehicleEntry(vm: TrackViewModel) {
+    val ctx = LocalContext.current
+    val paperPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val kind = vm.vehiclePaperKind
+        if (uri != null && kind != null) vm.readVehiclePaper(ctx, uri, kind)
+    }
+    Text(
+        "Type the plate and the details. Or add a pollution test, insurance, or RC book as an image or PDF. A date already past, or within 30 days, shows a due warning.",
+        fontSize = 13.sp,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(
+        value = vm.vehiclePlate,
+        onValueChange = { vm.vehiclePlate = it.uppercase().take(16) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(20.dp),
+        label = { Text("Number plate") },
+        placeholder = { Text("KL01AB1234") },
+    )
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(
+            selected = vm.vehicleKind == "car",
+            onClick = { vm.vehicleKind = "car" },
+            label = { Text("Car") },
+        )
+        FilterChip(
+            selected = vm.vehicleKind == "bike",
+            onClick = { vm.vehicleKind = "bike" },
+            label = { Text("Bike") },
+        )
+    }
+    PaperButton("Pollution test image or PDF", vm.vehicleBusy) {
+        vm.vehiclePaperKind = "pollution"
+        paperPicker.launch(arrayOf("image/*", "application/pdf"))
+    }
+    PaperButton("Insurance image or PDF", vm.vehicleBusy) {
+        vm.vehiclePaperKind = "insurance"
+        paperPicker.launch(arrayOf("image/*", "application/pdf"))
+    }
+    PaperButton("RC book image or PDF", vm.vehicleBusy) {
+        vm.vehiclePaperKind = "rc"
+        paperPicker.launch(arrayOf("image/*", "application/pdf"))
+    }
+    if (vm.vehicleBusy) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            Spacer(Modifier.width(8.dp))
+            Text("Reading the document…", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+    vm.vehicleScanNote.takeIf { it.isNotBlank() }?.let { note ->
+        Text(note, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+    }
+    OutlinedTextField(
+        value = vm.vehicleModel,
+        onValueChange = { vm.vehicleModel = it.take(40) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(20.dp),
+        label = { Text("Model") },
+    )
+    OutlinedTextField(
+        value = vm.vehicleFuel,
+        onValueChange = { vm.vehicleFuel = it.take(24) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(20.dp),
+        label = { Text("Fuel") },
+        placeholder = { Text("Petrol") },
+    )
+    OutlinedTextField(
+        value = vm.vehicleInsurance,
+        onValueChange = { vm.vehicleInsurance = it.take(24) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(20.dp),
+        label = { Text("Insurance date") },
+        placeholder = { Text("31 Dec 2026") },
+    )
+    DateWatch("Insurance", vm.vehicleInsurance)
+    OutlinedTextField(
+        value = vm.vehiclePollution,
+        onValueChange = { vm.vehiclePollution = it.take(24) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(20.dp),
+        label = { Text("Pollution test date") },
+        placeholder = { Text("31 Dec 2026") },
+    )
+    DateWatch("Pollution test", vm.vehiclePollution)
+    OutlinedTextField(
+        value = vm.vehicleRc,
+        onValueChange = { vm.vehicleRc = it.take(24) },
+        modifier = Modifier.fillMaxWidth(),
+        singleLine = true,
+        shape = RoundedCornerShape(20.dp),
+        label = { Text("RC valid date") },
+        placeholder = { Text("31 Dec 2026") },
+    )
+    DateWatch("RC", vm.vehicleRc)
+    Button(
+        onClick = {
+            if (vm.addVehicle()) Toast.makeText(ctx, "Saved", Toast.LENGTH_SHORT).show()
+        },
+        enabled = !vm.vehicleBusy,
+        modifier = Modifier.fillMaxWidth().height(54.dp),
+        shape = RoundedCornerShape(50),
+        colors = ButtonDefaults.buttonColors(containerColor = Brand.Coral, contentColor = Color.Black),
+    ) { Text("Add vehicle", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+    vm.error?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 13.sp) }
+}
+
+@Composable
+private fun PaperButton(label: String, busy: Boolean, onClick: () -> Unit) {
+    OutlinedButton(
+        onClick = onClick,
+        enabled = !busy,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(50),
+    ) {
+        Text(label, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun DateWatch(label: String, raw: String) {
+    val line = com.trackme.app.data.VehicleBook.watch(label, raw) ?: return
+    val dark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+    val color = when (line.urgency) {
+        com.trackme.app.data.PaperUrgency.OVERDUE -> MaterialTheme.colorScheme.error
+        com.trackme.app.data.PaperUrgency.DUE -> if (dark) Color(0xFFFFB074) else Color(0xFFC2410C)
+        com.trackme.app.data.PaperUrgency.OK -> if (dark) Color(0xFF7DCEA0) else Color(0xFF166534)
+        com.trackme.app.data.PaperUrgency.NONE -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
+    Text(line.text, fontSize = 12.sp, color = color)
 }
 
 @Composable

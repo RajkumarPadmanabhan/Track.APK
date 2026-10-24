@@ -311,8 +311,15 @@ private fun DetailScreen(vm: TrackViewModel, tab: Int) {
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                val subtitle = if (
+                    vm.platform == Platform.YOUTUBE || vm.platform == Platform.INSTAGRAM || vm.platform == Platform.PORTFOLIO
+                ) {
+                    vm.platform.label
+                } else {
+                    vm.platform.label + (acc?.let { " · @${it.handle}" } ?: "")
+                }
                 Text(
-                    "${vm.platform.label}" + (acc?.let { " · @${it.handle}" } ?: ""),
+                    subtitle,
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -470,7 +477,10 @@ private fun LinkProfileCard(
                     label == "Subscribers" || label == "Views" || label == "Videos"
                 kept && (value.equals("Hidden", true) || (parseCount(value) ?: 0L) > 0L)
             }
-            if (stats.isNotEmpty()) PreviewCard(preview.copy(stats = stats))
+            if (stats.isNotEmpty()) {
+                val hideName = platform == Platform.YOUTUBE || platform == Platform.INSTAGRAM || platform == Platform.PORTFOLIO
+                PreviewCard(preview.copy(stats = stats), showName = !hideName)
+            }
         }
         val savedCount = account?.count?.takeIf { it > 0L && (preview?.stats?.isEmpty() != false) }
         if (savedCount != null && (platform == Platform.LINKEDIN || platform == Platform.FACEBOOK || platform == Platform.INSTAGRAM || platform == Platform.X || platform == Platform.YOUTUBE)) {
@@ -515,17 +525,20 @@ private fun LinkProfileCard(
         }
         note?.let { Text(it, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         if (portfolioSections.isEmpty()) {
+            val hideName = platform == Platform.YOUTUBE || platform == Platform.INSTAGRAM || platform == Platform.PORTFOLIO
             Tile(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(platform.label, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        "@" + profile.handle.trimStart('@'),
-                        fontSize = 30.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (!hideName) {
+                        Text(
+                            "@" + profile.handle.trimStart('@'),
+                            fontSize = 30.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     Text(profile.url, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
@@ -597,7 +610,7 @@ private fun PortfolioSectionsView(
 }
 
 @Composable
-private fun PreviewCard(p: PublicProfile) {
+private fun PreviewCard(p: PublicProfile, showName: Boolean = true) {
     val ctx = LocalContext.current
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Tile(Modifier.fillMaxWidth()) {
@@ -609,13 +622,15 @@ private fun PreviewCard(p: PublicProfile) {
                 val img = p.imageUrl
                 if (!img.isNullOrBlank()) RemoteAvatar(img, 72)
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        p.name,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    if (showName) {
+                        Text(
+                            p.name,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     p.subtitle?.let {
                         Text(
                             it,
