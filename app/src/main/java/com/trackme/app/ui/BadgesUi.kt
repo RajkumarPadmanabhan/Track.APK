@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -85,27 +86,37 @@ fun BadgeMark(id: String, size: Dp, modifier: Modifier = Modifier) {
 
 @Composable
 fun VerifyTick(verified: Boolean, onClick: (() -> Unit)?) {
-    val bg = if (verified) Color(0xFF0095F6) else Color(0xFF8E8E8E)
+    val bg = if (verified) Color(0xFF1D9BF0) else Color(0xFF8E8E8E)
     Box(
         Modifier
-            .size(18.dp)
-            .clip(CircleShape)
-            .background(bg)
+            .size(22.dp)
             .then(if (!verified && onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.size(18.dp).padding(3.dp)) {
+        Canvas(Modifier.size(22.dp)) {
+            val cx = size.width / 2f
+            val cy = size.height / 2f
+            val outer = size.minDimension / 2f
+            val inner = outer * 0.84f
+            val teeth = 16
+            val seal = Path()
+            val steps = teeth * 2
+            for (i in 0 until steps) {
+                val angle = Math.toRadians(-90.0 + i * (360.0 / steps))
+                val radius = if (i % 2 == 0) outer else inner
+                val x = cx + (radius * kotlin.math.cos(angle)).toFloat()
+                val y = cy + (radius * kotlin.math.sin(angle)).toFloat()
+                if (i == 0) seal.moveTo(x, y) else seal.lineTo(x, y)
+            }
+            seal.close()
+            drawPath(seal, bg)
             val s = size.minDimension
-            val stroke = s * 0.16f
-            val start = Offset(s * 0.16f, s * 0.52f)
-            val corner = Offset(s * 0.40f, s * 0.76f)
-            val tip = Offset(s * 0.78f, s * 0.30f)
+            val stroke = s * 0.09f
+            val start = Offset(cx - s * 0.22f, cy + s * 0.02f)
+            val corner = Offset(cx - s * 0.06f, cy + s * 0.18f)
+            val tip = Offset(cx + s * 0.24f, cy - s * 0.16f)
             drawLine(Color.White, start, corner, strokeWidth = stroke, cap = StrokeCap.Round)
             drawLine(Color.White, corner, tip, strokeWidth = stroke, cap = StrokeCap.Round)
-            if (verified) {
-                drawLine(Color.White, Offset(tip.x - s * 0.24f, tip.y), tip, strokeWidth = stroke, cap = StrokeCap.Round)
-                drawLine(Color.White, tip, Offset(tip.x, tip.y + s * 0.24f), strokeWidth = stroke, cap = StrokeCap.Round)
-            }
         }
     }
 }
@@ -118,7 +129,7 @@ fun AchievementsDialog(
     onTogglePin: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val rows = BadgeBook.showcase(earned, activity)
+    val rows = BadgeBook.showcase(earned, activity).filter { (_, id) -> id !in pinned }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Achievements", fontWeight = FontWeight.Bold) },
@@ -141,11 +152,12 @@ fun AchievementsDialog(
                             )
                         }
                         if (got != null) {
-                            TextButton(onClick = { onTogglePin(id) }) {
-                                Text(if (id in pinned) "Added" else "Add")
-                            }
+                            TextButton(onClick = { onTogglePin(id) }) { Text("Add") }
                         }
                     }
+                }
+                if (rows.isEmpty()) {
+                    Text("Added badges are on your profile.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         },

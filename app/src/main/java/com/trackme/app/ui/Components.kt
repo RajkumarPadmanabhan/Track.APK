@@ -11,7 +11,6 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -554,55 +553,39 @@ fun HomeNav(
     onHome: () -> Unit,
     onProfile: () -> Unit,
     onScan: () -> Unit,
-    onNews: () -> Unit,
-    onFiles: () -> Unit = {},
+    onExpenses: () -> Unit,
 ) {
+    val bar = MaterialTheme.colorScheme.surface
+    val label = MaterialTheme.colorScheme.onSurface
     Row(
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .height(68.dp)
             .clip(RoundedCornerShape(50))
-            .background(Brand.Panel)
+            .background(bar)
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        NavItem(Icons.Default.Home, "Home", selected == Screen.HOME, onHome, tourKey = "home")
+        NavItem(Icons.Default.Home, "Home", selected == Screen.HOME, onHome, tourKey = "home", idle = label)
         Box(
             Modifier
                 .markTour("scan")
                 .size(54.dp)
                 .clip(CircleShape)
-                .background(Color.White)
-                .pointerInput(Unit) {
-                    var totalDragY = 0f
-                    detectVerticalDragGestures(
-                        onDragStart = { totalDragY = 0f },
-                        onVerticalDrag = { change, dragAmount ->
-                            change.consume()
-                            totalDragY += dragAmount
-                            if (totalDragY < -40f) {
-                                onNews()
-                                totalDragY = 0f
-                            } else if (totalDragY > 40f) {
-                                onHome()
-                                totalDragY = 0f
-                            }
-                        }
-                    )
-                }
+                .background(MaterialTheme.colorScheme.primary)
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = { onScan() },
-                        onDoubleTap = { onFiles() },
+                        onDoubleTap = { onExpenses() },
                     )
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan a tag", tint = Color.Black)
+            Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan a tag", tint = MaterialTheme.colorScheme.onPrimary)
         }
-        NavItem(Icons.Default.Person, "Profile", selected == Screen.PROFILE, onProfile, tourKey = "navprofile")
+        NavItem(Icons.Default.Person, "Profile", selected == Screen.PROFILE, onProfile, tourKey = "navprofile", idle = label)
     }
 }
 
@@ -613,8 +596,9 @@ private fun NavItem(
     selected: Boolean,
     onClick: () -> Unit,
     tourKey: String? = null,
+    idle: Color = Color(0xFF8A8A8A),
 ) {
-    val tint = if (selected) Brand.Coral else Color(0xFF8A8A8A)
+    val tint = if (selected) MaterialTheme.colorScheme.primary else idle.copy(alpha = 0.7f)
     Row(
         Modifier
             .then(if (tourKey != null) Modifier.markTour(tourKey) else Modifier)
@@ -625,6 +609,6 @@ private fun NavItem(
     ) {
         Icon(icon, contentDescription = label, tint = tint, modifier = Modifier.size(22.dp))
         Spacer(Modifier.width(8.dp))
-        Text(label, color = if (selected) Color.White else tint, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+        Text(label, color = tint, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
     }
 }

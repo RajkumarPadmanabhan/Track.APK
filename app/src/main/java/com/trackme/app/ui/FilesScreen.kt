@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.CreateNewFolder
+import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.ViewList
@@ -75,6 +77,10 @@ fun FilesScreen(vm: TrackViewModel) {
     var pendingDelete by remember { mutableStateOf<UploadedFile?>(null) }
     var pendingDownload by remember { mutableStateOf<UploadedFile?>(null) }
 
+    var openFolder by remember { mutableStateOf<String?>(null) }
+    var namingFolder by remember { mutableStateOf(false) }
+    var folderDraft by remember { mutableStateOf("") }
+    var moving by remember { mutableStateOf<UploadedFile?>(null) }
     var preview by remember { mutableStateOf<FilePreviewer.Result?>(null) }
     var previewName by remember { mutableStateOf("") }
     var previewing by remember { mutableStateOf(false) }
@@ -95,11 +101,13 @@ fun FilesScreen(vm: TrackViewModel) {
         }
     }
 
-    val files = remember(vm.uploadedFiles, query) {
+    val files = remember(vm.uploadedFiles, query, openFolder) {
         val q = query.trim().lowercase()
-        if (q.isBlank()) vm.uploadedFiles else vm.uploadedFiles.filter {
-            it.displayName.lowercase().contains(q) ||
-                (it.portfolioName?.lowercase()?.contains(q) == true)
+        vm.uploadedFiles.filter { file ->
+            val inFolder = if (openFolder == null) file.folder.isBlank() else file.folder == openFolder
+            val matches = q.isBlank() || file.displayName.lowercase().contains(q) ||
+                (file.portfolioName?.lowercase()?.contains(q) == true)
+            inFolder && matches
         }
     }
 
@@ -107,7 +115,12 @@ fun FilesScreen(vm: TrackViewModel) {
         Spacer(Modifier.height(16.dp))
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Files", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = Color.White)
+                Text(
+                    openFolder ?: "Files",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface,
+                )
                 Text(
                     "${vm.uploadedFiles.size} files · ${formatBytes(vm.totalUploadedBytes)}",
                     fontSize = 13.sp,
@@ -118,20 +131,28 @@ fun FilesScreen(vm: TrackViewModel) {
                 Icon(
                     if (searching) Icons.Default.Close else Icons.Default.Search,
                     contentDescription = "Search files",
-                    tint = Color.White,
+                    tint = MaterialTheme.colorScheme.onSurface,
                 )
+            }
+            if (openFolder != null) {
+                IconButton(onClick = { openFolder = null }) {
+                    Icon(Icons.Default.Close, contentDescription = "Leave folder", tint = MaterialTheme.colorScheme.onSurface)
+                }
+            }
+            IconButton(onClick = { folderDraft = ""; namingFolder = true }) {
+                Icon(Icons.Default.CreateNewFolder, contentDescription = "New folder", tint = MaterialTheme.colorScheme.onSurface)
             }
             Icon(
                 Icons.Default.ViewList,
                 contentDescription = "List",
-                tint = if (isGrid) Color.White.copy(alpha = 0.45f) else Color.White,
+                tint = if (isGrid) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f) else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(22.dp).clickable { isGrid = false },
             )
             Spacer(Modifier.width(14.dp))
             Icon(
                 Icons.Default.GridView,
                 contentDescription = "Grid",
-                tint = if (isGrid) Color.White else Color.White.copy(alpha = 0.45f),
+                tint = if (isGrid) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
                 modifier = Modifier.size(22.dp).clickable { isGrid = true },
             )
         }
@@ -147,8 +168,28 @@ fun FilesScreen(vm: TrackViewModel) {
             )
         }
         Spacer(Modifier.height(12.dp))
+        if (openFolder == null && vm.fileFolders.isNotEmpty()) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                vm.fileFolders.forEach { name ->
+                    val count = vm.uploadedFiles.count { it.folder == name }
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { openFolder = name }
+                            .padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.Folder, contentDescription = null, tint = Brand.Coral)
+                        Spacer(Modifier.width(10.dp))
+                        Text(name, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                        Text("$count", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
 
-        if (files.isEmpty()) {
+        if (files.isEmpty() && (openFolder != null || vm.fileFolders.isEmpty())) {
             Column(
                 Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Center,
@@ -186,6 +227,7 @@ fun FilesScreen(vm: TrackViewModel) {
                             downloadLauncher.launch(file.displayName)
                         },
                         onDelete = { pendingDelete = file },
+                        onMove = { moving = file },
                     )
                 }
             }
@@ -211,6 +253,7 @@ fun FilesScreen(vm: TrackViewModel) {
                             downloadLauncher.launch(file.displayName)
                         },
                         onDelete = { pendingDelete = file },
+                        onMove = { moving = file },
                     )
                 }
                 item { Spacer(Modifier.height(90.dp)) }
@@ -233,6 +276,45 @@ fun FilesScreen(vm: TrackViewModel) {
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
             },
+        )
+    }
+
+    if (namingFolder) {
+        AlertDialog(
+            onDismissRequest = { namingFolder = false },
+            title = { Text("New folder") },
+            text = {
+                OutlinedTextField(
+                    value = folderDraft,
+                    onValueChange = { folderDraft = it },
+                    singleLine = true,
+                    label = { Text("Folder name") },
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    if (vm.addFileFolder(folderDraft)) namingFolder = false
+                    else Toast.makeText(ctx, "Choose a new folder name", Toast.LENGTH_SHORT).show()
+                }) { Text("Create") }
+            },
+            dismissButton = { TextButton(onClick = { namingFolder = false }) { Text("Cancel") } },
+        )
+    }
+
+    moving?.let { file ->
+        AlertDialog(
+            onDismissRequest = { moving = null },
+            title = { Text("Move ${file.displayName}", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    TextButton(onClick = { vm.moveFileToFolder(file.id, ""); moving = null }) { Text("No folder") }
+                    vm.fileFolders.forEach { name ->
+                        TextButton(onClick = { vm.moveFileToFolder(file.id, name); moving = null }) { Text(name) }
+                    }
+                    if (vm.fileFolders.isEmpty()) Text("Create a folder first, or leave this file here.", fontSize = 13.sp)
+                }
+            },
+            confirmButton = { TextButton(onClick = { moving = null }) { Text("Close") } },
         )
     }
 
@@ -311,6 +393,7 @@ private fun FileCard(
     onPreview: () -> Unit,
     onDownload: () -> Unit,
     onDelete: () -> Unit,
+    onMove: () -> Unit,
 ) {
     Tile(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -319,7 +402,7 @@ private fun FileCard(
                 Spacer(Modifier.width(8.dp))
                 Text(
                     file.displayName,
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     maxLines = 2,
@@ -329,22 +412,25 @@ private fun FileCard(
             }
             Text(
                 formatBytes(file.originalSize),
-                color = Color.White.copy(alpha = 0.65f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 fontSize = 12.sp,
             )
             if (!compact) {
                 Text(
                     "Saved as ${formatBytes(file.storedSize)} · ${dateText(file.uploadedAt)}",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     fontSize = 11.sp,
                 )
             }
             Row {
                 IconButton(onClick = onPreview, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Visibility, contentDescription = "Preview", tint = Color.White)
+                    Icon(Icons.Default.Visibility, contentDescription = "Preview", tint = MaterialTheme.colorScheme.onSurface)
+                }
+                IconButton(onClick = onMove, modifier = Modifier.size(36.dp)) {
+                    Icon(Icons.Default.Folder, contentDescription = "Move to folder", tint = MaterialTheme.colorScheme.onSurface)
                 }
                 IconButton(onClick = onDownload, modifier = Modifier.size(36.dp)) {
-                    Icon(Icons.Default.Download, contentDescription = "Download", tint = Color.White)
+                    Icon(Icons.Default.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.onSurface)
                 }
                 IconButton(onClick = onDelete, modifier = Modifier.size(36.dp)) {
                     Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Brand.Coral)

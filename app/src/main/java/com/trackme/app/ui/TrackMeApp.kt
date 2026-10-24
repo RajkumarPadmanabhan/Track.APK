@@ -215,6 +215,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
             Screen.DETAIL -> vm.closeDetail()
             Screen.FILES -> vm.screen = Screen.NEWS
             Screen.NEWS -> vm.screen = Screen.HOME
+            Screen.EXPENSES -> vm.screen = Screen.HOME
             else -> vm.screen = Screen.HOME
         }
     }
@@ -236,8 +237,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                     onHome = { vm.screen = Screen.HOME },
                     onProfile = { vm.screen = Screen.PROFILE },
                     onScan = { vm.openAdd() },
-                    onNews = { vm.screen = Screen.NEWS },
-                    onFiles = { vm.screen = Screen.FILES },
+                    onExpenses = { vm.openExpenses() },
                 )
             }
         },
@@ -274,6 +274,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                 Screen.DETAIL -> DetailScreen(vm, tab)
                 Screen.NEWS -> NewsScreen(vm)
                 Screen.FILES -> FilesScreen(vm)
+                Screen.EXPENSES -> ExpenseScreen(vm)
                 Screen.LINKED_DEVICES -> LinkedDevicesScreen(vm)
             }
         }

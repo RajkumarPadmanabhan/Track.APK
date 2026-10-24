@@ -65,7 +65,7 @@ private val tourSteps = listOf(
     TourStep("activity", "Activity", "The bars and the graph follow your saved counts. They stay flat until a count changes.", 0.5f, 0.34f),
     TourStep("contributions", "Contributions this year", "Tap the number to start the monkey. The card color changes only then. Tap the card to jump.", 0.28f, 0.46f),
     TourStep("layout", "Your platforms", "Each card is a page you scanned. This button switches list and grid.", 0.86f, 0.62f),
-    TourStep("scan", "Scan", "Tap to add a link or upload a file. Swipe left for news, then files. Swipe right to go back.", 0.5f, 0.9f),
+    TourStep("scan", "Scan", "Tap to add a link or upload a file. Double tap for expenses. Swipe the page left for news, then files.", 0.5f, 0.9f),
     TourStep("home", "Home", "Brings you back to this page.", 0.18f, 0.9f),
     TourStep("navprofile", "Profile", "Opens settings, backup, and sign out.", 0.82f, 0.9f),
 )

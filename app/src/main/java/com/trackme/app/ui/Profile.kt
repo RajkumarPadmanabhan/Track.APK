@@ -127,6 +127,8 @@ fun ProfileScreen(vm: TrackViewModel) {
     var promoCode by remember { mutableStateOf("") }
     var promoError by remember { mutableStateOf(false) }
     var showBadges by remember { mutableStateOf(false) }
+    var showActivity by remember { mutableStateOf(false) }
+    var removeBadge by remember { mutableStateOf<String?>(null) }
     val saveBackup = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) vm.exportBackup(context, uri)
     }
@@ -204,7 +206,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                             BadgeMark(
                                 badge.id,
                                 36.dp,
-                                modifier = Modifier.clickable { showBadges = true },
+                                modifier = Modifier.clickable { removeBadge = badge.id },
                             )
                         }
                     }
@@ -226,6 +228,24 @@ fun ProfileScreen(vm: TrackViewModel) {
 
         // ----- Settings -----
         item { SectionTitle("Settings", "Customization and app info") }
+
+        item {
+            Tile(Modifier.fillMaxWidth().clickable { showActivity = true }) {
+                Row(
+                    Modifier.fillMaxWidth().padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Activity", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                        Text(
+                            "Choose what shows on the home activity card",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
 
         item {
             Tile(
@@ -562,14 +582,26 @@ fun ProfileScreen(vm: TrackViewModel) {
                     modifier = Modifier.size(28.dp)
                 )
             },
-            title = { Text("App Theme Color", fontWeight = FontWeight.Bold) },
+            title = { Text("Appearance", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text(
-                        "Select your favorite accent color to personalize the app theme.",
+                        "Light, dark, or follow the phone. Then pick an accent color.",
                         fontSize = 13.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        ThemeMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = vm.themeMode == mode,
+                                onClick = { vm.updateThemeMode(mode) },
+                                label = { Text(mode.label) },
+                            )
+                        }
+                    }
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -605,6 +637,59 @@ fun ProfileScreen(vm: TrackViewModel) {
         )
     }
 
+    if (showActivity) {
+        val parts = listOf(
+            "chart" to "Bars and graph",
+            "contributions" to "Contributions",
+            "tags" to "Tags",
+            "size" to "Size",
+            "badges" to "Badge notifications",
+            "cost" to "Cost",
+        )
+        AlertDialog(
+            onDismissRequest = { showActivity = false },
+            title = { Text("Activity", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "Turn off anything you do not want on the home activity card. Cost appears after you open expenses.",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    parts.forEach { (key, label) ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(label, modifier = Modifier.weight(1f))
+                            androidx.compose.material3.Switch(
+                                checked = vm.activityShown(key),
+                                onCheckedChange = { vm.setActivityShown(key, it) },
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showActivity = false }) { Text("Done") }
+            },
+        )
+    }
+
+    removeBadge?.let { id ->
+        AlertDialog(
+            onDismissRequest = { removeBadge = null },
+            title = { Text("Remove this badge?") },
+            text = { Text("It leaves your profile and shows in Achievements again.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.togglePinnedBadge(id)
+                    removeBadge = null
+                }) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { removeBadge = null }) { Text("Cancel") }
+            },
+        )
+    }
+
     if (showOther) {
         AlertDialog(
             onDismissRequest = { showOther = false },
@@ -625,7 +710,7 @@ fun ProfileScreen(vm: TrackViewModel) {
                         "App update",
                         if (vm.isCheckingAppUpdate) "Checking…" else "Installed version: v${vm.currentAppVersion}",
                     ) { vm.checkAppUpdate() }
-                    OtherAction("Theme", "Current: ${vm.selectedThemeColor.label}") {
+                    OtherAction("Theme", "${vm.themeMode.label} · ${vm.selectedThemeColor.label}") {
                         showOther = false
                         showThemeDialog = true
                     }
@@ -696,7 +781,8 @@ fun ProfileScreen(vm: TrackViewModel) {
                     AboutBullet("Turn a link into an app shortcut on the home screen")
                     AboutBullet("Badges for scans, uploads, activity, file size, and days in the app")
                     AboutBullet("Activity bars and the graph follow your counts. The color changes when the monkey starts")
-                    AboutBullet("Theme colors, and a blue tick after the promo code")
+                    AboutBullet("Light, dark, or system theme, plus an accent color")
+                    AboutBullet("Double tap the scan button for expenses. Cost shows on Activity when it is on")
                 }
             },
             confirmButton = {

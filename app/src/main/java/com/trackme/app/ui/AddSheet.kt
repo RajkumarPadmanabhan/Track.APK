@@ -89,7 +89,7 @@ fun AddTagSheet(vm: TrackViewModel) {
     ModalBottomSheet(
         onDismissRequest = { vm.closeAdd() },
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-        containerColor = Color(0xFF111111),
+        containerColor = MaterialTheme.colorScheme.surface,
     ) {
         Column(
             Modifier

@@ -256,8 +256,16 @@ fun HomeScreen(vm: TrackViewModel) {
                     tags = platformAccounts.size,
                     accounts = accounts.filter { !it.isHidden },
                     filesSize = com.trackme.app.data.formatBytes(vm.totalUploadedBytes),
-                    badgeCount = vm.earnedBadges.size,
+                    badgeCount = vm.earnedBadges.count { it.id !in vm.pinnedBadgeIds },
                     onBadges = { showBadges = true },
+                    showChart = vm.activityShown("chart"),
+                    showContributions = vm.activityShown("contributions"),
+                    showTags = vm.activityShown("tags"),
+                    showSize = vm.activityShown("size"),
+                    showBadges = vm.activityShown("badges"),
+                    showCost = vm.expenseEnabled && vm.activityShown("cost"),
+                    monthSpent = vm.currentMonthSpent(),
+                    monthLimit = vm.expenseLimit,
                 )
             }
 
@@ -697,6 +705,14 @@ private fun HeroTile(
     filesSize: String = "0 B",
     badgeCount: Int = 0,
     onBadges: () -> Unit = {},
+    showChart: Boolean = true,
+    showContributions: Boolean = true,
+    showTags: Boolean = true,
+    showSize: Boolean = true,
+    showBadges: Boolean = true,
+    showCost: Boolean = false,
+    monthSpent: Double = 0.0,
+    monthLimit: Double = 0.0,
 ) {
     var bgIndex by remember { mutableIntStateOf(0) }
     var monkeyOn by remember { mutableStateOf(false) }
@@ -737,7 +753,7 @@ private fun HeroTile(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Activity", fontSize = 32.sp, fontWeight = FontWeight.Medium, color = ink, letterSpacing = (-0.5).sp, modifier = Modifier.weight(1f))
-            if (badgeCount > 0) {
+            if (showBadges && badgeCount > 0) {
                 Row(
                     Modifier
                         .clip(RoundedCornerShape(50))
@@ -759,15 +775,17 @@ private fun HeroTile(
             }
         }
         Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth().height(44.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            WaveformBars(bars, Modifier.weight(1f).fillMaxHeight(), ink, ink.copy(alpha = 0.16f))
-            CountChart(
-                series,
-                Modifier.weight(1f).fillMaxHeight(),
-                ink,
-                GraphKind.CURVE,
-                honest = true,
-            )
+        if (showChart) {
+            Row(Modifier.fillMaxWidth().height(44.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                WaveformBars(bars, Modifier.weight(1f).fillMaxHeight(), ink, ink.copy(alpha = 0.16f))
+                CountChart(
+                    series,
+                    Modifier.weight(1f).fillMaxHeight(),
+                    ink,
+                    GraphKind.CURVE,
+                    honest = true,
+                )
+            }
         }
         if (monkeyOn) {
             Spacer(Modifier.height(6.dp))
@@ -780,47 +798,64 @@ private fun HeroTile(
         }
         Spacer(Modifier.height(8.dp))
         Row(verticalAlignment = Alignment.Bottom) {
-            Column(
-                Modifier
-                    .weight(1.35f)
-                    .markTour("contributions")
-                    .then(
-                        if (!monkeyOn) {
-                            Modifier.clickable {
-                                bgIndex = (bgIndex + 1) % bgColors.size
-                                monkeyOn = true
-                            }
-                        } else {
-                            Modifier
-                        },
-                    ),
-            ) {
-                val countText = compactCount(totalGrowth)
-                Text(
-                    countText,
-                    fontSize = if (countText.length >= 7) 22.sp else 28.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = ink,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    "Contributions this year",
-                    fontSize = 11.sp,
-                    color = ink.copy(alpha = 0.6f),
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis,
+            if (showContributions) {
+                Column(
+                    Modifier
+                        .weight(1.35f)
+                        .markTour("contributions")
+                        .then(
+                            if (!monkeyOn) {
+                                Modifier.clickable {
+                                    bgIndex = (bgIndex + 1) % bgColors.size
+                                    monkeyOn = true
+                                }
+                            } else {
+                                Modifier
+                            },
+                        ),
+                ) {
+                    val countText = compactCount(totalGrowth)
+                    Text(
+                        countText,
+                        fontSize = if (countText.length >= 7) 22.sp else 28.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = ink,
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "Contributions this year",
+                        fontSize = 11.sp,
+                        color = ink.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        softWrap = false,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            if (showTags) HeroSmall(tags.toString(), "Tags", Modifier.weight(0.7f))
+            if (showSize) {
+                HeroSmall(
+                    value = filesSize,
+                    label = "Size",
+                    modifier = Modifier.weight(0.85f),
                 )
             }
-            HeroSmall(tags.toString(), "Tags", Modifier.weight(0.7f))
-            HeroSmall(
-                value = filesSize,
-                label = "Size",
-                modifier = Modifier.weight(0.85f),
-            )
+            if (showCost) {
+                val hot = monthLimit > 0.0 && monthSpent >= monthLimit
+                Column(Modifier.weight(0.9f)) {
+                    HotCount(
+                        text = com.trackme.app.data.ExpenseBook.money(monthSpent),
+                        hot = hot,
+                        color = ink,
+                        fontSize = if (monthSpent >= 100000) 14.sp else 18.sp,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text("Cost", fontSize = 11.sp, color = ink.copy(alpha = 0.55f), maxLines = 1)
+                }
+            }
         }
     }
 }

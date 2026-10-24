@@ -74,20 +74,20 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
                 text = "Live News Headlines",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f),
             )
             Icon(
                 imageVector = Icons.Default.ViewList,
                 contentDescription = "List",
-                tint = if (isGridView) Color.White.copy(alpha = 0.45f) else Color.White,
+                tint = if (isGridView) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f) else MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.size(22.dp).clickable { isGridView = false },
             )
             Spacer(modifier = Modifier.width(14.dp))
             Icon(
                 imageVector = Icons.Default.GridView,
                 contentDescription = "Grid",
-                tint = if (isGridView) Color.White else Color.White.copy(alpha = 0.45f),
+                tint = if (isGridView) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f),
                 modifier = Modifier.size(22.dp).clickable { isGridView = true },
             )
         }
@@ -99,7 +99,7 @@ fun NewsScreen(vm: com.trackme.app.TrackViewModel) {
             ) {
                 Text(
                     picked.mapNotNull { id -> NewsTopics.all.firstOrNull { it.id == id }?.label }.joinToString(" · "),
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onSurface,
                     fontSize = 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,

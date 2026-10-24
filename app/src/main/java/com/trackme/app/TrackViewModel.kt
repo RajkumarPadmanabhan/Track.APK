@@ -28,6 +28,8 @@ import com.trackme.app.data.TrackedAccount
 import com.trackme.app.data.sameProfileUrl
 import com.trackme.app.data.siteKey
 import com.trackme.app.data.UserSession
+import com.trackme.app.data.ExpenseBook
+import com.trackme.app.data.ExpenseEntry
 import com.trackme.app.data.detectPlatform
 import com.trackme.app.data.mergeWith
 import com.trackme.app.data.nameFromEmail
@@ -58,7 +60,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES, NEWS, FILES }
+enum class Screen { HOME, PROFILE, DETAIL, LINKED_DEVICES, NEWS, FILES, EXPENSES }
 
 class TrackViewModel(app: Application) : AndroidViewModel(app) {
 
@@ -130,6 +132,91 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     fun updateThemeColor(option: com.trackme.app.ui.ThemeColorOption) {
         themeColorName = option.name
         prefs.edit().putString("theme_color", option.name).apply()
+    }
+
+    var themeModeName by mutableStateOf(prefs.getString("theme_mode", com.trackme.app.ui.ThemeMode.SYSTEM.name) ?: com.trackme.app.ui.ThemeMode.SYSTEM.name)
+        private set
+
+    val themeMode: com.trackme.app.ui.ThemeMode
+        get() = com.trackme.app.ui.ThemeMode.fromName(themeModeName)
+
+    fun updateThemeMode(mode: com.trackme.app.ui.ThemeMode) {
+        themeModeName = mode.name
+        prefs.edit().putString("theme_mode", mode.name).apply()
+    }
+
+    var expenseEnabled by mutableStateOf(false)
+        private set
+    var expenseLimit by mutableStateOf(0.0)
+        private set
+    var expenses by mutableStateOf<List<ExpenseEntry>>(emptyList())
+        private set
+    var hiddenActivity by mutableStateOf<Set<String>>(emptySet())
+        private set
+    var fileFolders by mutableStateOf<List<String>>(emptyList())
+        private set
+
+    fun activityShown(part: String): Boolean = part !in hiddenActivity
+
+    fun setActivityShown(part: String, shown: Boolean) {
+        val email = session?.email ?: return
+        hiddenActivity = if (shown) hiddenActivity - part else hiddenActivity + part
+        prefs.edit().putString("activity_hidden_$email", hiddenActivity.joinToString(",")).apply()
+    }
+
+    fun currentMonthSpent(): Double {
+        val c = java.util.Calendar.getInstance()
+        return ExpenseBook.spent(expenses, c.get(java.util.Calendar.YEAR), c.get(java.util.Calendar.MONTH))
+    }
+
+    fun openExpenses() {
+        val email = session?.email ?: return
+        if (!expenseEnabled) {
+            expenseEnabled = true
+            ExpenseBook.save(prefs, email, ExpenseBook.State(true, expenseLimit, expenses))
+        }
+        screen = Screen.EXPENSES
+    }
+
+    fun updateExpenseLimit(value: Double) {
+        val email = session?.email ?: return
+        expenseLimit = value.coerceAtLeast(0.0)
+        expenseEnabled = true
+        ExpenseBook.save(prefs, email, ExpenseBook.State(true, expenseLimit, expenses))
+    }
+
+    fun saveExpense(id: String?, title: String, category: String, price: Double, at: Long) {
+        val email = session?.email ?: return
+        val next = if (id == null) {
+            expenses + ExpenseEntry(ExpenseBook.newId(), title, category, price, at)
+        } else {
+            expenses.map { if (it.id == id) it.copy(title = title, category = category, price = price, at = at) else it }
+        }.sortedByDescending { it.at }
+        expenses = next
+        expenseEnabled = true
+        ExpenseBook.save(prefs, email, ExpenseBook.State(true, expenseLimit, expenses))
+    }
+
+    fun deleteExpense(id: String) {
+        val email = session?.email ?: return
+        expenses = expenses.filter { it.id != id }
+        ExpenseBook.save(prefs, email, ExpenseBook.State(expenseEnabled, expenseLimit, expenses))
+    }
+
+    fun addFileFolder(name: String): Boolean {
+        val email = session?.email ?: return false
+        val clean = name.trim().take(40)
+        if (clean.isBlank() || fileFolders.any { it.equals(clean, true) }) return false
+        fileFolders = fileFolders + clean
+        prefs.edit().putString("folders_$email", fileFolders.joinToString("\u001F")).apply()
+        return true
+    }
+
+    fun moveFileToFolder(id: String, folder: String) {
+        val email = session?.email ?: return
+        val clean = folder.trim()
+        uploadedFiles = uploadedFiles.map { if (it.id == id) it.copy(folder = clean) else it }
+        UploadedFileStore.save(prefs, email, uploadedFiles)
     }
 
     // Live News State
@@ -583,6 +670,11 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             earnedBadges = emptyList()
             pinnedBadgeIds = emptyList()
             verified = false
+            expenseEnabled = false
+            expenseLimit = 0.0
+            expenses = emptyList()
+            hiddenActivity = emptySet()
+            fileFolders = emptyList()
             return
         }
         earnedBadges = BadgeBook.fromJson(prefs.getString(badgeKey(email, "badges"), null))
@@ -592,6 +684,21 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             .map { it.trim() }
             .filter { it.isNotBlank() }
         verified = prefs.getBoolean(badgeKey(email, "verified"), false)
+        val book = ExpenseBook.load(prefs, email)
+        expenseEnabled = book.enabled
+        expenseLimit = book.limit
+        expenses = book.items
+        hiddenActivity = prefs.getString("activity_hidden_$email", "")
+            .orEmpty()
+            .split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .toSet()
+        fileFolders = prefs.getString("folders_$email", "")
+            .orEmpty()
+            .split("\u001F")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
     }
 
     private fun rememberAppDay(email: String): Int {
@@ -711,6 +818,11 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         earnedBadges = emptyList()
         pinnedBadgeIds = emptyList()
         verified = false
+        expenseEnabled = false
+        expenseLimit = 0.0
+        expenses = emptyList()
+        hiddenActivity = emptySet()
+        fileFolders = emptyList()
         screen = Screen.HOME
         showAdd = false
         detailId = null

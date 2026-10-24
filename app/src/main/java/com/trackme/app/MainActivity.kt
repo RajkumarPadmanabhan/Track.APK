@@ -28,7 +28,7 @@ class MainActivity : ComponentActivity() {
         }.getOrNull()
 
         setContent {
-            TrackTheme(accentColor = vm.selectedThemeColor.color) {
+            TrackTheme(accentColor = vm.selectedThemeColor.color, mode = vm.themeMode) {
                 Surface(color = MaterialTheme.colorScheme.background) {
                     TrackMeApp(vm, shared)
                 }

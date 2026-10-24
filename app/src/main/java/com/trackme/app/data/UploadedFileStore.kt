@@ -81,6 +81,7 @@ object UploadedFileStore {
                     portfolioName = o.str("portfolioName"),
                     mimeType = o.str("mimeType") ?: "application/octet-stream",
                     extension = o.str("extension") ?: "",
+                    folder = o.optString("folder", ""),
                 )
             }
         } catch (_: Exception) {
@@ -103,6 +104,7 @@ object UploadedFileStore {
                 put("portfolioName", f.portfolioName ?: JSONObject.NULL)
                 put("mimeType", f.mimeType)
                 put("extension", f.extension)
+                put("folder", f.folder)
             })
         }
         prefs.edit().putString("files_$email", arr.toString()).apply()
