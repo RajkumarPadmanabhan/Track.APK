@@ -776,12 +776,11 @@ private fun HeroTile(
                 }
             }
         }
-                Spacer(Modifier.height(6.dp))
-        if (showChart) {
+        Spacer(Modifier.height(6.dp))
+        if (showChart && !monkeyOn) {
             ActivityGraph(series, ink, Modifier.fillMaxWidth().height(72.dp))
         }
         if (monkeyOn) {
-            Spacer(Modifier.height(6.dp))
             MonkeyRun(
                 jumpToken = jumpToken,
                 ink = ink,
@@ -1036,7 +1035,17 @@ private fun MonkeyRun(jumpToken: Int, ink: Color, onOut: () -> Unit, modifier: M
         },
     ) {
         val ground = size.height - 8f
-        drawLine(ink.copy(alpha = 0.35f), androidx.compose.ui.geometry.Offset(0f, ground), androidx.compose.ui.geometry.Offset(size.width, ground), 3f)
+        val roll = Path()
+        val steps = 24
+        val shift = world.passed * 90f
+        for (i in 0..steps) {
+            val x = size.width * i / steps
+            val wave = kotlin.math.sin(((x + shift) / 42f).toDouble()).toFloat()
+            val y = ground - 18f - wave * 10f
+            if (i == 0) roll.moveTo(x, y) else roll.lineTo(x, y)
+        }
+        drawPath(roll, ink.copy(alpha = 0.55f), style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round))
+        drawLine(ink.copy(alpha = 0.28f), androidx.compose.ui.geometry.Offset(0f, ground), androidx.compose.ui.geometry.Offset(size.width, ground), 3f)
         val seen = tick
         if (seen < 0) return@Canvas
         for (b in world.blocks) {
