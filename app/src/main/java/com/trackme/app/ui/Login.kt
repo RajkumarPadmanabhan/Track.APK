@@ -1,6 +1,15 @@
 package com.trackme.app.ui
 
 import android.widget.Toast
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +28,7 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -27,13 +37,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.trackme.app.TrackViewModel
@@ -46,11 +58,32 @@ fun LoginScreen(vm: TrackViewModel) {
     val scope = rememberCoroutineScope()
     var isSigningIn by remember { mutableStateOf(false) }
 
+    val intro = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        intro.animateTo(1f, tween(1100, easing = FastOutSlowInEasing))
+    }
+    val wave by rememberInfiniteTransition(label = "open").animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(2600, easing = LinearEasing), RepeatMode.Restart),
+        label = "openWave",
+    )
+    val headline = ((intro.value - 0.08f) / 0.42f).coerceIn(0f, 1f)
+    val buttonIn = ((intro.value - 0.42f) / 0.58f).coerceIn(0f, 1f)
+
     Box(Modifier.fillMaxSize().background(Color.Black)) {
+        OpenWave(
+            wave,
+            headline,
+            Modifier.fillMaxWidth().height(220.dp).align(Alignment.Center).padding(horizontal = 8.dp),
+        )
         Column(
             Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 20.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.graphicsLayer { alpha = intro.value },
+            ) {
                 Box(Modifier.size(14.dp).clip(CircleShape).background(Brand.Coral))
                 Spacer(Modifier.width(8.dp))
                 Text("TrackMe", fontWeight = FontWeight.Bold, fontSize = 20.sp)
@@ -59,19 +92,32 @@ fun LoginScreen(vm: TrackViewModel) {
             Spacer(Modifier.weight(1f))
 
             Text(
-                buildAnnotatedString {
-                    append("Your socials and\ngit activity, ")
-                    withStyle(SpanStyle(color = Brand.Coral)) { append("tracked daily.") }
-                },
-                fontSize = 36.sp,
-                lineHeight = 41.sp,
+                "Track your",
+                fontSize = 40.sp,
+                lineHeight = 44.sp,
                 fontWeight = FontWeight.Bold,
+                modifier = Modifier.graphicsLayer {
+                    alpha = headline
+                    translationY = (1f - headline) * 36f
+                },
+            )
+            Text(
+                "track records",
+                fontSize = 40.sp,
+                lineHeight = 44.sp,
+                fontWeight = FontWeight.Bold,
+                color = Brand.Coral,
+                modifier = Modifier.graphicsLayer {
+                    alpha = headline
+                    translationY = (1f - headline) * 48f
+                },
             )
             Spacer(Modifier.height(10.dp))
             Text(
                 "Scan your profiles once. See followers, subscribers and commits move every day, all on one home page.",
                 fontSize = 15.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.graphicsLayer { alpha = headline },
             )
             Spacer(Modifier.height(24.dp))
 
@@ -92,7 +138,13 @@ fun LoginScreen(vm: TrackViewModel) {
                     }
                 },
                 enabled = !isSigningIn,
-                modifier = Modifier.fillMaxWidth().height(58.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(58.dp)
+                    .graphicsLayer {
+                        alpha = buttonIn
+                        translationY = (1f - buttonIn) * 28f
+                    },
                 shape = RoundedCornerShape(50),
                 colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
             ) {
@@ -119,8 +171,30 @@ fun LoginScreen(vm: TrackViewModel) {
                 fontSize = 12.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = buttonIn },
             )
         }
+    }
+}
+
+@Composable
+private fun OpenWave(wave: Float, fade: Float, modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        if (size.width < 2f || fade <= 0f) return@Canvas
+        val n = 28
+        val path = Path()
+        for (i in 0..n) {
+            val x = size.width * i / n
+            val t = i / n.toFloat()
+            val y = size.height * 0.55f +
+                kotlin.math.sin((t * 6.2f + wave * 6.28f).toDouble()).toFloat() * size.height * 0.22f +
+                kotlin.math.sin((t * 2.4f + wave * 3f).toDouble()).toFloat() * size.height * 0.08f
+            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
+        drawPath(
+            path,
+            Brand.Coral.copy(alpha = 0.55f * fade),
+            style = Stroke(width = 3.dp.toPx(), cap = StrokeCap.Round),
+        )
     }
 }

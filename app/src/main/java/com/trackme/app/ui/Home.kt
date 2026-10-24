@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -28,6 +27,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -37,8 +38,13 @@ import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
 import kotlin.random.Random
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.GridView
@@ -250,7 +256,7 @@ fun HomeScreen(vm: TrackViewModel) {
 
 
 
-            item {
+                item {
                 HeroTile(
                     totalGrowth = totalGrowth,
                     tags = platformAccounts.size,
@@ -621,10 +627,10 @@ private fun GroupOrderDialog(
                             AccountAvatar(acc, 40.dp)
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(
+                        Text(
                                     acc.name.ifBlank { acc.handle },
                                     color = Color.White,
-                                    fontWeight = FontWeight.Bold,
+                            fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
@@ -738,10 +744,6 @@ private fun HeroTile(
     val currentBg = bgColors[bgIndex % bgColors.size]
     val ink = Brand.Ink
     val series = remember(accounts) { activityCountSeries(accounts) }
-    val bars = remember(series) {
-        val max = series.maxOrNull() ?: 0f
-        if (max <= 0f) series.map { 0f } else series.map { it / max }
-    }
     Column(
         Modifier
             .fillMaxWidth()
@@ -774,18 +776,9 @@ private fun HeroTile(
                 }
             }
         }
-        Spacer(Modifier.height(6.dp))
+                Spacer(Modifier.height(6.dp))
         if (showChart) {
-            Row(Modifier.fillMaxWidth().height(44.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                WaveformBars(bars, Modifier.weight(1f).fillMaxHeight(), ink, ink.copy(alpha = 0.16f))
-                CountChart(
-                    series,
-                    Modifier.weight(1f).fillMaxHeight(),
-                    ink,
-                    GraphKind.CURVE,
-                    honest = true,
-                )
-            }
+            ActivityGraph(series, ink, Modifier.fillMaxWidth().height(72.dp))
         }
         if (monkeyOn) {
             Spacer(Modifier.height(6.dp))
@@ -825,8 +818,8 @@ private fun HeroTile(
                         overflow = TextOverflow.Ellipsis,
                     )
                     Spacer(Modifier.height(2.dp))
-                    Text(
-                        "Contributions this year",
+                Text(
+                    "Contributions this year",
                         fontSize = 11.sp,
                         color = ink.copy(alpha = 0.6f),
                         maxLines = 1,
@@ -857,6 +850,81 @@ private fun HeroTile(
                 }
             }
         }
+    }
+}
+
+/** Bars and a line from saved daily counts. A day with no count stays on the baseline. */
+@Composable
+private fun ActivityGraph(series: List<Float>, color: Color, modifier: Modifier = Modifier) {
+    val draw = remember { Animatable(0f) }
+    LaunchedEffect(series) {
+        draw.snapTo(0f)
+        draw.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
+    }
+    Canvas(modifier) {
+        val n = series.size
+        if (n < 2 || size.width < 2f || size.height < 2f) return@Canvas
+        val max = series.max().coerceAtLeast(0f)
+        val shown = (n * draw.value).coerceIn(0f, n.toFloat())
+        val gap = 4.dp.toPx()
+        val bw = ((size.width - gap * (n - 1)) / n).coerceAtLeast(3f)
+        val floor = size.height - 1.dp.toPx()
+        fun barHeight(v: Float): Float {
+            val t = if (max <= 0f) 0.08f else (v / max).coerceIn(0f, 1f)
+            return (floor * (0.14f + 0.82f * t)).coerceAtLeast(4f)
+        }
+        drawLine(
+            color = color.copy(alpha = 0.18f),
+            start = Offset(0f, floor),
+            end = Offset(size.width, floor),
+            strokeWidth = 1.5.dp.toPx(),
+            cap = StrokeCap.Round,
+        )
+        series.forEachIndexed { i, v ->
+            if (i.toFloat() > shown) return@forEachIndexed
+            val fade = if (i + 1f > shown) (shown - i).coerceIn(0f, 1f) else 1f
+            val h = barHeight(v) * fade
+            drawRoundRect(
+                color = color.copy(alpha = 0.28f + 0.55f * (if (max <= 0f) 0.35f else (v / max).coerceIn(0f, 1f))),
+                topLeft = Offset(i * (bw + gap), floor - h),
+                size = Size(bw, h),
+                cornerRadius = CornerRadius(bw / 2f, bw / 2f),
+            )
+        }
+        val points = series.mapIndexed { i, v ->
+            Offset(i * (bw + gap) + bw / 2f, floor - barHeight(v))
+        }
+        val last = kotlin.math.floor(shown.toDouble()).toInt().coerceIn(0, points.lastIndex)
+        val visible = points.take(last + 1).toMutableList()
+        val frac = (shown - last).coerceIn(0f, 1f)
+        if (frac > 0.01f && last < points.lastIndex) {
+            val a = points[last]
+            val b = points[last + 1]
+            visible.add(Offset(a.x + (b.x - a.x) * frac, a.y + (b.y - a.y) * frac))
+        }
+        if (visible.size < 2) return@Canvas
+        val line = Path().apply {
+            moveTo(visible.first().x, visible.first().y)
+            for (i in 1 until visible.size) {
+                val prev = visible[i - 1]
+                val cur = visible[i]
+                val cx = (prev.x + cur.x) / 2f
+                quadraticBezierTo(cx, prev.y, cx, (prev.y + cur.y) / 2f)
+                quadraticBezierTo(cx, cur.y, cur.x, cur.y)
+            }
+        }
+        val fill = Path().apply {
+            addPath(line)
+            lineTo(visible.last().x, floor)
+            lineTo(visible.first().x, floor)
+            close()
+        }
+        drawPath(fill, color.copy(alpha = 0.16f))
+        drawPath(
+            line,
+            color,
+            style = Stroke(width = 2.4.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
+        )
     }
 }
 
@@ -1261,13 +1329,13 @@ private fun AccountCard(
                     }
                 }
                 if (m.big.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(m.big, color = ink, fontSize = 38.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, lineHeight = 42.sp)
-                            Spacer(Modifier.height(4.dp))
-                            Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
-                        }
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(m.big, color = ink, fontSize = 38.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, lineHeight = 42.sp)
+                        Spacer(Modifier.height(4.dp))
+                        Text(m.bigLabel, color = ink.copy(alpha = 0.65f), fontSize = 13.sp)
+                    }
                         CountChart(m.spark, Modifier.width(136.dp).height(74.dp), ink, graphKind(acc.id, graphIndex), acc.id.hashCode())
                     }
                 }
@@ -1418,24 +1486,24 @@ private fun StackedGridAccountCard(
                 .padding(14.dp),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    AccountAvatar(acc, 36.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            acc.name.ifBlank { acc.handle },
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                AccountAvatar(acc, 36.dp)
+                Spacer(Modifier.width(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        acc.name.ifBlank { acc.handle },
                             color = ink, fontWeight = FontWeight.Bold, fontSize = 14.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
+                    Text(
                             acc.tagLine(withPlatform = false),
                             color = ink.copy(alpha = 0.6f), fontSize = 11.sp,
-                            maxLines = 1, overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                    Text("+${group.size - 1}", color = ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    )
                 }
-                Column {
+                    Text("+${group.size - 1}", color = ink, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            }
+            Column {
                     val big = front.big.ifBlank { "Open" }
                     Text(big, color = ink, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis)
                     Text(
@@ -1453,7 +1521,7 @@ private fun StackedGridAccountCard(
                 ) {
                     Text(acc.platform.label, color = ink.copy(alpha = 0.75f), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     Icon(Icons.Default.ViewList, contentDescription = null, tint = ink, modifier = Modifier.size(16.dp))
-                }
+            }
         }
     }
 }
