@@ -60,10 +60,17 @@ object GitHubApi {
                 htmlUrl = o.getString("html_url"),
                 createdAt = o.optString("created_at"),
                 location = o.str("location"),
+                overview = profileOverview("https://api.github.com/repos/$username/$username/readme"),
             )
         } catch (e: Exception) {
             fetchUserFromWeb(username) ?: throw e
         }
+    }
+
+    /** The profile README, when that user has one. Missing readmes stay blank. */
+    private fun profileOverview(url: String): String? {
+        val raw = HttpHtml.get(url, "application/vnd.github.raw") ?: return null
+        return cleanOverview(raw)
     }
 
     /** Fetches every public repo (paginated, 100 per page, up to 1000). */

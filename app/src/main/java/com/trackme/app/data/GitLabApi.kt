@@ -28,8 +28,17 @@ object GitLabApi {
             htmlUrl = d.optString("web_url", "https://gitlab.com/$username"),
             createdAt = d.optString("created_at"),
             location = d.str("location"),
+            overview = profileOverview(d.optString("username", username)),
         )
         user to id
+    }
+
+    private fun profileOverview(username: String): String? {
+        val project = URLEncoder.encode("$username/$username", "UTF-8")
+        val raw = HttpHtml.get("$BASE/projects/$project/repository/files/README.md/raw?ref=main")
+            ?: HttpHtml.get("$BASE/projects/$project/repository/files/README.md/raw?ref=master")
+            ?: return null
+        return cleanOverview(raw)
     }
 
     suspend fun fetchRepos(userId: Long): List<GhRepo> = withContext(Dispatchers.IO) {

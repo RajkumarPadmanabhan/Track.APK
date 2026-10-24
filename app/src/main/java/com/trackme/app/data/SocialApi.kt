@@ -33,7 +33,7 @@ object SocialApi {
             val body = try {
                 Http.get(
                     "https://www.googleapis.com/youtube/v3/channels" +
-                        "?part=snippet,statistics&$query&key=${enc(apiKey)}"
+                        "?part=snippet,statistics,contentDetails&$query&key=${enc(apiKey)}"
                 )
             } catch (e: ApiException) {
                 throw ApiException(
@@ -63,28 +63,14 @@ object SocialApi {
             ).joinToString(" · ").ifBlank { null }
 
             val channelId = o.optString("id")
-            val recentVideos = mutableListOf<YouTubeVideoItem>()
-            if (channelId.isNotBlank() && apiKey.isNotBlank()) {
-                try {
-                    val searchBody = Http.get(
-                        "https://www.googleapis.com/youtube/v3/search" +
-                            "?part=snippet&channelId=${enc(channelId)}&order=date&type=video&maxResults=10&key=${enc(apiKey)}"
-                    )
-                    val searchItems = JSONObject(searchBody).optJSONArray("items") ?: JSONArray()
-                    for (i in 0 until searchItems.length()) {
-                        val item = searchItems.getJSONObject(i)
-                        val vId = item.optJSONObject("id")?.optString("videoId") ?: continue
-                        val vSn = item.optJSONObject("snippet") ?: continue
-                        val vThumb = vSn.optJSONObject("thumbnails")?.optJSONObject("medium")?.optString("url")
-                            ?: vSn.optJSONObject("thumbnails")?.optJSONObject("high")?.optString("url") ?: ""
-                        recentVideos += YouTubeVideoItem(
-                            id = vId,
-                            title = vSn.optString("title"),
-                            publishedAt = vSn.optString("publishedAt").take(10),
-                            thumbnailUrl = vThumb
-                        )
-                    }
-                } catch (_: Exception) {}
+            val uploads = o.optJSONObject("contentDetails")
+                ?.optJSONObject("relatedPlaylists")
+                ?.optString("uploads")
+                .orEmpty()
+            val recentVideos = if (apiKey.isNotBlank()) {
+                loadYouTubeVideos(uploads, channelId, apiKey)
+            } else {
+                emptyList()
             }
 
             PublicProfile(
@@ -102,6 +88,61 @@ object SocialApi {
                 recentVideos = recentVideos,
             )
         }
+
+    private fun loadYouTubeVideos(uploadsId: String, channelId: String, apiKey: String): List<YouTubeVideoItem> {
+        val fromUploads = if (uploadsId.isNotBlank()) {
+            runCatching { playlistVideos(uploadsId, apiKey) }.getOrNull()
+        } else {
+            null
+        }
+        if (!fromUploads.isNullOrEmpty()) return fromUploads
+        if (channelId.isBlank()) return emptyList()
+        return runCatching { searchVideos(channelId, apiKey) }.getOrDefault(emptyList())
+    }
+
+    private fun playlistVideos(uploadsId: String, apiKey: String): List<YouTubeVideoItem> {
+        val body = Http.get(
+            "https://www.googleapis.com/youtube/v3/playlistItems" +
+                "?part=snippet&playlistId=${enc(uploadsId)}&maxResults=8&key=${enc(apiKey)}"
+        )
+        return videoRows(JSONObject(body).optJSONArray("items"), fromPlaylist = true)
+    }
+
+    private fun searchVideos(channelId: String, apiKey: String): List<YouTubeVideoItem> {
+        val body = Http.get(
+            "https://www.googleapis.com/youtube/v3/search" +
+                "?part=snippet&channelId=${enc(channelId)}&order=date&type=video&maxResults=8&key=${enc(apiKey)}"
+        )
+        return videoRows(JSONObject(body).optJSONArray("items"), fromPlaylist = false)
+    }
+
+    private fun videoRows(items: JSONArray?, fromPlaylist: Boolean): List<YouTubeVideoItem> {
+        if (items == null) return emptyList()
+        val out = ArrayList<YouTubeVideoItem>()
+        for (i in 0 until items.length()) {
+            val item = items.optJSONObject(i) ?: continue
+            val snip = item.optJSONObject("snippet") ?: continue
+            val id = if (fromPlaylist) {
+                snip.optJSONObject("resourceId")?.optString("videoId").orEmpty()
+            } else {
+                item.optJSONObject("id")?.optString("videoId").orEmpty()
+            }
+            if (id.isBlank()) continue
+            val title = snip.optString("title")
+            if (title.isBlank() || title.equals("Private video", true) || title.equals("Deleted video", true)) continue
+            val thumbs = snip.optJSONObject("thumbnails")
+            val thumb = thumbs?.optJSONObject("medium")?.optString("url").orEmpty()
+                .ifBlank { thumbs?.optJSONObject("high")?.optString("url").orEmpty() }
+                .ifBlank { "https://i.ytimg.com/vi/$id/hqdefault.jpg" }
+            out += YouTubeVideoItem(
+                id = id,
+                title = title,
+                publishedAt = snip.optString("publishedAt").take(10),
+                thumbnailUrl = thumb,
+            )
+        }
+        return out
+    }
 
     // Follower and following counts only. A missing count is left out.
     suspend fun fetchPreview(platform: Platform, profile: ParsedProfile): PublicProfile =

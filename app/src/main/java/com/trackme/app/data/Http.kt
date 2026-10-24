@@ -47,6 +47,21 @@ object HttpHtml {
     }
 }
 
+/** Plain text from a profile README. A blank readme stays absent. */
+internal fun cleanOverview(raw: String): String? {
+    val text = raw
+        .replace(Regex("<!--[\\s\\S]*?-->"), " ")
+        .replace(Regex("```[\\s\\S]*?```"), " ")
+        .replace(Regex("!\\[[^\\]]*\\]\\([^)]*\\)"), " ")
+        .replace(Regex("\\[([^\\]]+)\\]\\([^)]*\\)"), "$1")
+        .replace(Regex("^#{1,6}\\s*", RegexOption.MULTILINE), "")
+        .replace(Regex("[*_>`]"), "")
+        .replace(Regex("\\n{3,}"), "\n\n")
+        .trim()
+    if (text.isBlank()) return null
+    return text.take(1600)
+}
+
 /** Returns the string value, or null when the key is missing, null or blank. */
 internal fun JSONObject.str(key: String): String? =
     if (isNull(key)) null else optString(key).takeIf { it.isNotBlank() }

@@ -81,6 +81,7 @@ fun FilesScreen(vm: TrackViewModel) {
     var namingFolder by remember { mutableStateOf(false) }
     var folderDraft by remember { mutableStateOf("") }
     var moving by remember { mutableStateOf<UploadedFile?>(null) }
+    var pendingFolderDelete by remember { mutableStateOf<String?>(null) }
     var preview by remember { mutableStateOf<FilePreviewer.Result?>(null) }
     var previewName by remember { mutableStateOf("") }
     var previewing by remember { mutableStateOf(false) }
@@ -104,10 +105,12 @@ fun FilesScreen(vm: TrackViewModel) {
     val files = remember(vm.uploadedFiles, query, openFolder) {
         val q = query.trim().lowercase()
         vm.uploadedFiles.filter { file ->
-            val inFolder = if (openFolder == null) file.folder.isBlank() else file.folder == openFolder
             val matches = q.isBlank() || file.displayName.lowercase().contains(q) ||
                 (file.portfolioName?.lowercase()?.contains(q) == true)
-            inFolder && matches
+            if (!matches) return@filter false
+            if (q.isNotBlank()) true
+            else if (openFolder == null) file.folder.isBlank()
+            else file.folder == openFolder
         }
     }
 
@@ -135,6 +138,9 @@ fun FilesScreen(vm: TrackViewModel) {
                 )
             }
             if (openFolder != null) {
+                IconButton(onClick = { pendingFolderDelete = openFolder }) {
+                    Icon(Icons.Default.Delete, contentDescription = "Delete folder", tint = Brand.Coral)
+                }
                 IconButton(onClick = { openFolder = null }) {
                     Icon(Icons.Default.Close, contentDescription = "Leave folder", tint = MaterialTheme.colorScheme.onSurface)
                 }
@@ -168,7 +174,7 @@ fun FilesScreen(vm: TrackViewModel) {
             )
         }
         Spacer(Modifier.height(12.dp))
-        if (openFolder == null && vm.fileFolders.isNotEmpty()) {
+        if (openFolder == null && query.isBlank() && vm.fileFolders.isNotEmpty()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 vm.fileFolders.forEach { name ->
                     val count = vm.uploadedFiles.count { it.folder == name }
@@ -183,13 +189,16 @@ fun FilesScreen(vm: TrackViewModel) {
                         Spacer(Modifier.width(10.dp))
                         Text(name, modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
                         Text("$count", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp)
+                        IconButton(onClick = { pendingFolderDelete = name }, modifier = Modifier.size(36.dp)) {
+                            Icon(Icons.Default.Delete, contentDescription = "Delete folder", tint = Brand.Coral)
+                        }
                     }
                 }
             }
             Spacer(Modifier.height(12.dp))
         }
 
-        if (files.isEmpty() && (openFolder != null || vm.fileFolders.isEmpty())) {
+        if (files.isEmpty() && (query.isNotBlank() || openFolder != null || vm.fileFolders.isEmpty())) {
             Column(
                 Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.Center,
@@ -213,6 +222,7 @@ fun FilesScreen(vm: TrackViewModel) {
                 items(files, key = { it.id }) { file ->
                     FileCard(
                         file = file,
+                        path = filePath(file, query),
                         compact = true,
                         onPreview = {
                             previewName = file.displayName
@@ -239,6 +249,7 @@ fun FilesScreen(vm: TrackViewModel) {
                 items(files, key = { it.id }) { file ->
                     FileCard(
                         file = file,
+                        path = filePath(file, query),
                         compact = false,
                         onPreview = {
                             previewName = file.displayName
@@ -275,6 +286,31 @@ fun FilesScreen(vm: TrackViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { pendingDelete = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    pendingFolderDelete?.let { name ->
+        val count = vm.uploadedFiles.count { it.folder == name }
+        AlertDialog(
+            onDismissRequest = { pendingFolderDelete = null },
+            title = { Text("Delete this folder?") },
+            text = {
+                Text(
+                    if (count == 0) "$name will be removed."
+                    else "$name will be removed. $count file" + (if (count == 1) "" else "s") + " will stay in Files, outside any folder.",
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    vm.deleteFileFolder(name)
+                    if (openFolder == name) openFolder = null
+                    pendingFolderDelete = null
+                    Toast.makeText(ctx, "Folder deleted", Toast.LENGTH_SHORT).show()
+                }) { Text("Delete", color = Brand.Coral) }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingFolderDelete = null }) { Text("Cancel") }
             },
         )
     }
@@ -387,8 +423,15 @@ private fun AudioPreview(file: java.io.File?) {
 }
 
 @Composable
+private fun filePath(file: UploadedFile, query: String): String? {
+    if (query.isBlank() || file.folder.isBlank()) return null
+    return file.folder + " / " + file.displayName
+}
+
+@Composable
 private fun FileCard(
     file: UploadedFile,
+    path: String?,
     compact: Boolean,
     onPreview: () -> Unit,
     onDownload: () -> Unit,
@@ -408,6 +451,15 @@ private fun FileCard(
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
+                )
+            }
+            if (path != null) {
+                Text(
+                    path,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                 )
             }
             Text(

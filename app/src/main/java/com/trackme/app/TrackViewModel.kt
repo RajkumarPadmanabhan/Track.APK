@@ -212,6 +212,21 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         return true
     }
 
+    /** Removes the folder. Files that were in it stay in Files, outside any folder. */
+    fun deleteFileFolder(name: String) {
+        val email = session?.email ?: return
+        val clean = name.trim()
+        if (clean.isBlank()) return
+        fileFolders = fileFolders.filterNot { it.equals(clean, true) }
+        prefs.edit().putString("folders_$email", fileFolders.joinToString("\u001F")).apply()
+        if (uploadedFiles.any { it.folder.equals(clean, true) }) {
+            uploadedFiles = uploadedFiles.map {
+                if (it.folder.equals(clean, true)) it.copy(folder = "") else it
+            }
+            UploadedFileStore.save(prefs, email, uploadedFiles)
+        }
+    }
+
     fun moveFileToFolder(id: String, folder: String) {
         val email = session?.email ?: return
         val clean = folder.trim()

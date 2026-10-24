@@ -11,6 +11,7 @@ data class GhUser(
     val htmlUrl: String,
     val createdAt: String,
     val location: String?,
+    val overview: String? = null,
 )
 
 data class GhRepo(

@@ -465,6 +465,44 @@ fun RemoteAvatar(url: String, size: Int = 72) {
     }
 }
 
+/** A rectangular photo, used for a video thumbnail. */
+@Composable
+fun RemoteImage(url: String, modifier: Modifier, description: String) {
+    var bmp by remember(url) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(url) {
+        if (url.isBlank()) {
+            bmp = null
+            return@LaunchedEffect
+        }
+        bmp = withContext(Dispatchers.IO) {
+            runCatching {
+                val conn = (java.net.URL(url).openConnection() as java.net.HttpURLConnection).apply {
+                    instanceFollowRedirects = true
+                    connectTimeout = 12000
+                    readTimeout = 12000
+                    setRequestProperty(
+                        "User-Agent",
+                        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+                    )
+                    setRequestProperty("Accept", "image/avif,image/webp,image/*,*/*")
+                }
+                try {
+                    if (conn.responseCode !in 200..299) null
+                    else conn.inputStream.use { BitmapFactory.decodeStream(it) }
+                } finally {
+                    conn.disconnect()
+                }
+            }.getOrNull()
+        }
+    }
+    val imageBitmap = remember(bmp) {
+        bmp?.let { runCatching { it.asImageBitmap() }.getOrNull() }
+    }
+    if (imageBitmap != null) {
+        Image(imageBitmap, contentDescription = description, modifier = modifier, contentScale = ContentScale.Crop)
+    }
+}
+
 /** Round avatar showing the first letter of a name. */
 @Composable
 fun InitialAvatar(name: String, size: Dp, modifier: Modifier = Modifier, onClick: (() -> Unit)? = null) {

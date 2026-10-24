@@ -38,8 +38,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
 import com.trackme.app.data.YouTubeVideoItem
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -667,7 +665,6 @@ private fun PreviewCard(p: PublicProfile) {
 
 @Composable
 private fun VideoPreviewCard(video: YouTubeVideoItem, onClick: () -> Unit) {
-    val ctx = LocalContext.current
     val isShort = video.title.contains("#shorts", ignoreCase = true)
     val cardWidth = if (isShort) 130.dp else 200.dp
     val aspect = if (isShort) 9f / 16f else 16f / 9f
@@ -686,14 +683,9 @@ private fun VideoPreviewCard(video: YouTubeVideoItem, onClick: () -> Unit) {
                     .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
-                if (video.thumbnailUrl.isNotBlank()) {
-                    AsyncImage(
-                        model = video.thumbnailUrl,
-                        contentDescription = video.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
+                val thumb = video.thumbnailUrl.ifBlank { "https://i.ytimg.com/vi/${video.id}/hqdefault.jpg" }
+                RemoteImage(thumb, Modifier.fillMaxSize(), video.title)
+                if (video.thumbnailUrl.isBlank() && video.id.isBlank()) {
                     Icon(
                         Icons.Default.PlayCircle,
                         contentDescription = "Play",
@@ -790,6 +782,14 @@ private fun OverviewTab(vm: TrackViewModel, user: GhUser) {
             }
         }
         user.bio?.let { Text(it) }
+        user.overview?.takeIf { it.isNotBlank() }?.let { overview ->
+            Tile(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Overview", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                    Text(overview, fontSize = 14.sp)
+                }
+            }
+        }
         if (user.createdAt.isNotBlank()) {
             Text(
                 "Joined ${vm.platform.label} ${date(user.createdAt)}",
