@@ -366,7 +366,7 @@ fun HomeScreen(vm: TrackViewModel) {
                         Modifier
                             .markTour("layout")
                             .clip(RoundedCornerShape(50))
-                            .background(Color.White.copy(alpha = 0.12f))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
                             .clickable { isGridView = !isGridView }
                             .padding(horizontal = 12.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
@@ -375,12 +375,12 @@ fun HomeScreen(vm: TrackViewModel) {
                         Icon(
                             imageVector = if (isGridView) Icons.Default.GridView else Icons.Default.ViewList,
                             contentDescription = "Toggle View Mode",
-                            tint = Color.White,
+                            tint = MaterialTheme.colorScheme.onSurface,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
                             if (isGridView) "Grid" else "List",
-                            color = Color.White,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Bold
                         )
@@ -514,7 +514,7 @@ private fun AppIcon(
         Spacer(Modifier.height(6.dp))
         Text(
             name,
-            color = Color.White,
+            color = MaterialTheme.colorScheme.onSurface,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
             textAlign = TextAlign.Center,

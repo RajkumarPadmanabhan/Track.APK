@@ -389,7 +389,7 @@ private fun PreviewBody(result: FilePreviewer.Result) {
             FilePreviewer.Kind.PDF -> result.pages.forEach { page ->
                 Image(page.asImageBitmap(), contentDescription = "Page", modifier = Modifier.fillMaxWidth())
             }
-            FilePreviewer.Kind.TEXT -> Text(result.text.orEmpty(), color = Color.White, fontSize = 13.sp)
+            FilePreviewer.Kind.TEXT -> Text(result.text.orEmpty(), color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
             FilePreviewer.Kind.VIDEO -> result.media?.let { media ->
                 AndroidView(
                     modifier = Modifier.fillMaxWidth().height(220.dp),
@@ -419,7 +419,7 @@ private fun AudioPreview(file: java.io.File?) {
         }
         onDispose { runCatching { player.release() } }
     }
-    Text("Playing the saved audio.", color = Color.White, fontSize = 13.sp)
+    Text("Playing the saved audio.", color = MaterialTheme.colorScheme.onSurface, fontSize = 13.sp)
 }
 
 @Composable

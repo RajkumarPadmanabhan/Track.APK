@@ -71,6 +71,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
@@ -141,13 +142,19 @@ fun ProfileScreen(vm: TrackViewModel) {
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        // ----- Profile card (dark, big name, white action button) -----
         item {
+            val darkCard = MaterialTheme.colorScheme.background.luminance() < 0.5f
             Column(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(32.dp))
-                    .background(Brush.verticalGradient(listOf(Color(0xFF2A2A2A), Color(0xFF0E0E0E))))
+                    .background(
+                        if (darkCard) {
+                            Brush.verticalGradient(listOf(Color(0xFF2A2A2A), Color(0xFF0E0E0E)))
+                        } else {
+                            Brush.verticalGradient(listOf(Color.White, Color(0xFFF4F4F1)))
+                        },
+                    )
                     .padding(22.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
@@ -216,7 +223,8 @@ fun ProfileScreen(vm: TrackViewModel) {
                     modifier = Modifier.fillMaxWidth().height(54.dp),
                     shape = RoundedCornerShape(20.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFF1F1F1), contentColor = Color.Black,
+                        containerColor = if (darkCard) Color(0xFFF1F1F1) else Color(0xFF121212),
+                        contentColor = if (darkCard) Color.Black else Color.White,
                     ),
                 ) {
                     Icon(Icons.Default.Edit, null, Modifier.size(18.dp))

@@ -73,7 +73,7 @@ fun NewsPostCard(post: UserNewsPost) {
                     fontSize = 16.sp,
                     lineHeight = 22.sp
                 ),
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
@@ -84,7 +84,7 @@ fun NewsPostCard(post: UserNewsPost) {
                 Text(
                     text = description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.LightGray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
