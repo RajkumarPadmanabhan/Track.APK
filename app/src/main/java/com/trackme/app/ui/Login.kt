@@ -25,7 +25,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -86,7 +85,7 @@ fun LoginScreen(vm: TrackViewModel) {
             ) {
                 Box(Modifier.size(14.dp).clip(CircleShape).background(Brand.Coral))
                 Spacer(Modifier.width(8.dp))
-                Text("TrackMe", fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("TrackMe", fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color.White)
             }
 
             Spacer(Modifier.weight(1f))
@@ -96,6 +95,7 @@ fun LoginScreen(vm: TrackViewModel) {
                 fontSize = 40.sp,
                 lineHeight = 44.sp,
                 fontWeight = FontWeight.Bold,
+                color = Color.White,
                 modifier = Modifier.graphicsLayer {
                     alpha = headline
                     translationY = (1f - headline) * 36f
@@ -116,7 +116,7 @@ fun LoginScreen(vm: TrackViewModel) {
             Text(
                 "Scan your profiles once. See followers, subscribers and commits move every day, all on one home page.",
                 fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color(0xFFD0D0D0),
                 modifier = Modifier.graphicsLayer { alpha = headline },
             )
             Spacer(Modifier.height(24.dp))
@@ -169,7 +169,7 @@ fun LoginScreen(vm: TrackViewModel) {
             Text(
                 "Your tags and counts are stored only on this device.",
                 fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = Color(0xFFBDBDBD),
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth().graphicsLayer { alpha = buttonIn },
             )

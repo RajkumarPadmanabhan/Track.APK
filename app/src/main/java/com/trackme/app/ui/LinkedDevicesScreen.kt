@@ -62,15 +62,15 @@ fun LinkedDevicesScreen(vm: TrackViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF121216))
+            .background(MaterialTheme.colorScheme.background)
             .verticalScroll(rememberScrollState())
             .padding(16.dp)
     ) {
-        Text("Linked Devices", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
+        Text("Linked Devices", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
         Spacer(Modifier.height(6.dp))
         Text(
             "Put the phone and the computer on the same Wi-Fi. Open the address, type the code, then use Install TrackWindows. That downloads TrackWindows.cmd, separate from the phone APK. Open it to get TrackWindows.exe. Log out here, or sign out of the app, and the computer drops the link immediately.",
-            color = Color(0xFFBDBDBD),
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 14.sp
         )
         Spacer(Modifier.height(16.dp))
@@ -138,7 +138,7 @@ fun LinkedDevicesScreen(vm: TrackViewModel) {
         }
         Spacer(Modifier.height(20.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Connected (${clients.size})", color = Color.White, fontWeight = FontWeight.Bold)
+            Text("Connected (${clients.size})", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold)
             if (url != null) {
                 TextButton(onClick = { vm.stopDesktop(); vm.screen = com.trackme.app.Screen.PROFILE }) {
                     Text("Log out", color = Color(0xFFFF5252))

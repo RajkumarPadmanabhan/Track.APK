@@ -545,19 +545,19 @@ private fun GroupOrderDialog(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(Brand.Panel)
+                .background(MaterialTheme.colorScheme.surface)
                 .padding(24.dp),
         ) {
             Text(
                 "${group.firstOrNull()?.platform?.label ?: "Profiles"} profiles",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onSurface,
             )
             Text(
                 "Drag a profile to the top. That one shows first on the card.",
                 fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.65f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(12.dp))
             Column {
@@ -570,14 +570,14 @@ private fun GroupOrderDialog(
                             .zIndex(if (dragging) 1f else 0f)
                             .offset { IntOffset(0, if (dragging) dragDy.roundToInt() else 0) }
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (dragging) Color.White.copy(alpha = 0.08f) else Color.Transparent)
+                            .background(if (dragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
                             .padding(vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(
                             Icons.Default.Menu,
                             contentDescription = "Drag",
-                            tint = Color.White.copy(alpha = 0.7f),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier
                                 .size(40.dp)
                                 .pointerInput(acc.id) {
@@ -629,7 +629,7 @@ private fun GroupOrderDialog(
                             Column(Modifier.weight(1f)) {
                         Text(
                                     acc.name.ifBlank { acc.handle },
-                                    color = Color.White,
+                                    color = MaterialTheme.colorScheme.onSurface,
                             fontWeight = FontWeight.Bold,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -647,7 +647,7 @@ private fun GroupOrderDialog(
                                 }
                                 Text(
                                     info,
-                                    color = Color.White.copy(alpha = 0.6f),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     fontSize = 12.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
@@ -852,7 +852,7 @@ private fun HeroTile(
     }
 }
 
-/** Bars and a line from saved daily counts. A day with no count stays on the baseline. */
+/** Bars and a line from saved daily counts. Height and strength follow that day's count. */
 @Composable
 private fun ActivityGraph(series: List<Float>, color: Color, modifier: Modifier = Modifier) {
     val draw = remember { Animatable(0f) }
@@ -865,30 +865,41 @@ private fun ActivityGraph(series: List<Float>, color: Color, modifier: Modifier 
         if (n < 2 || size.width < 2f || size.height < 2f) return@Canvas
         val max = series.max().coerceAtLeast(0f)
         val shown = (n * draw.value).coerceIn(0f, n.toFloat())
-        val gap = 4.dp.toPx()
+        val gap = 5.dp.toPx()
         val bw = ((size.width - gap * (n - 1)) / n).coerceAtLeast(3f)
-        val floor = size.height - 1.dp.toPx()
+        val floor = size.height - 2.dp.toPx()
+        val plot = (floor - 10.dp.toPx()).coerceAtLeast(8f)
         fun barHeight(v: Float): Float {
-            val t = if (max <= 0f) 0.08f else (v / max).coerceIn(0f, 1f)
-            return (floor * (0.14f + 0.82f * t)).coerceAtLeast(4f)
+            if (max <= 0f || v <= 0f) return 0f
+            return plot * (v / max).coerceIn(0f, 1f)
         }
         drawLine(
-            color = color.copy(alpha = 0.18f),
+            color = color.copy(alpha = 0.2f),
             start = Offset(0f, floor),
             end = Offset(size.width, floor),
             strokeWidth = 1.5.dp.toPx(),
             cap = StrokeCap.Round,
         )
+        val peak = series.indices.maxByOrNull { series[it] } ?: 0
         series.forEachIndexed { i, v ->
-            if (i.toFloat() > shown) return@forEachIndexed
+            if (i.toFloat() > shown || v <= 0f) return@forEachIndexed
             val fade = if (i + 1f > shown) (shown - i).coerceIn(0f, 1f) else 1f
+            val share = (v / max).coerceIn(0f, 1f)
             val h = barHeight(v) * fade
+            val left = i * (bw + gap)
             drawRoundRect(
-                color = color.copy(alpha = 0.28f + 0.55f * (if (max <= 0f) 0.35f else (v / max).coerceIn(0f, 1f))),
-                topLeft = Offset(i * (bw + gap), floor - h),
+                color = color.copy(alpha = (0.22f + 0.62f * share) * fade),
+                topLeft = Offset(left, floor - h),
                 size = Size(bw, h),
                 cornerRadius = CornerRadius(bw / 2f, bw / 2f),
             )
+            if (i == peak && share > 0f) {
+                drawCircle(
+                    color = color,
+                    radius = (bw * 0.42f).coerceAtLeast(3f),
+                    center = Offset(left + bw / 2f, floor - h),
+                )
+            }
         }
         val points = series.mapIndexed { i, v ->
             Offset(i * (bw + gap) + bw / 2f, floor - barHeight(v))
@@ -1133,7 +1144,7 @@ private fun StatTile(icon: ImageVector, label: String, value: String, footer: St
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(icon, null, Modifier.size(16.dp), tint = Color.White)
+                Icon(icon, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.width(6.dp))
                 Text(label, fontSize = 14.sp, fontWeight = FontWeight.Medium)
             }
