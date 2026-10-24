@@ -876,6 +876,7 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
                     }
                     if (option != null) updateThemeColor(option)
                 }
+                "mode" -> com.trackme.app.ui.ThemeMode.fromName(id.uppercase()).let { updateThemeMode(it) }
             }
         }
         if (android.os.Looper.myLooper() == android.os.Looper.getMainLooper()) run.run() else {
@@ -932,11 +933,22 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         root.put("news", news)
         val files = JSONArray()
         uploadedFiles.forEach { file ->
-            files.put(JSONObject().put("id", file.id).put("name", file.displayName).put("size", formatBytes(file.originalSize)))
+            files.put(
+                JSONObject()
+                    .put("id", file.id)
+                    .put("name", file.displayName)
+                    .put("size", formatBytes(file.originalSize))
+                    .put("folder", file.folder),
+            )
         }
         root.put("files", files)
+        val spentNow = currentMonthSpent()
+        root.put("cost", if (expenseEnabled) ExpenseBook.money(spentNow) else "")
+        root.put("limit", if (expenseEnabled && expenseLimit > 0.0) ExpenseBook.money(expenseLimit) else "")
+        root.put("costHot", expenseEnabled && expenseLimit > 0.0 && spentNow >= expenseLimit)
         root.put("alive", true)
         root.put("theme", themeColorName)
+        root.put("themeMode", themeModeName)
         if (!desktopNote.isNullOrBlank()) root.put("note", desktopNote)
         return root.toString()
     }

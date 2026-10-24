@@ -51,6 +51,7 @@ namespace TrackWindows
         readonly ListBox fileList;
         readonly Label connLabel;
         readonly Label homeTitle;
+        readonly Label activityLine;
         readonly CheckBox reflectBox;
         readonly List<Label> notes = new List<Label>();
         readonly List<Button> phoneThemeButtons = new List<Button>();
@@ -67,7 +68,7 @@ namespace TrackWindows
         int rail = RailShut;
         int busy;
         bool placing;
-        bool dark;
+        bool dark = true;
         bool reflect = true;
         bool compact;
         string edge = "right";
@@ -115,7 +116,8 @@ namespace TrackWindows
             accountList = List();
             fileList = List();
             connLabel = NoteLabel("Not connected");
-            homeTitle = Title("On the phone");
+            homeTitle = Title("Your platforms");
+            activityLine = NoteLabel("Activity and cost show here when the phone is connected.");
             reflectBox = new CheckBox();
             reflectBox.Text = "Reflect background";
             reflectBox.Height = 28;
@@ -252,8 +254,8 @@ namespace TrackWindows
             Button add = Btn("Add on phone");
             add.Click += AddLink;
             Label status = NoteLabel("");
-            Label title = Title("Add a link");
-            Label hint = Hint("Paste a profile link. The phone saves it, and it shows here.");
+            Label title = Title("Scan a tag");
+            Label hint = Hint("Paste a profile link. The phone saves it. The same link cannot be added twice.");
             scanPage.Resize += delegate { Stack(scanPage, title, hint, urlBox, add, status); };
         }
 
@@ -261,14 +263,14 @@ namespace TrackWindows
         {
             Button back = Btn("Back on phone");
             back.Click += delegate { Act("home", ""); };
-            Label hint = Hint("Tags on the phone. Double-click one to open it there.");
-            homePage.Resize += delegate { Stack(homePage, homeTitle, hint, accountList, back); };
+            Label hint = Hint("Each scanned link is its own color on the phone, even two accounts on the same site. Double-click one to open it there.");
+            homePage.Resize += delegate { Stack(homePage, homeTitle, hint, activityLine, accountList, back); };
         }
 
         void BuildFiles()
         {
             Label title = Title("Files");
-            Label hint = Hint("Files saved on the phone. Double-click one to open it.");
+            Label hint = Hint("Documents saved on the phone. A folder name is shown when the file is filed. Double-click to open it.");
             filesPage.Resize += delegate { Stack(filesPage, title, hint, fileList); };
         }
 
@@ -278,9 +280,18 @@ namespace TrackWindows
             Button night = Btn("Dark");
             light.Click += delegate { dark = false; SaveSettings(); ApplyChrome(); Invalidate(); };
             night.Click += delegate { dark = true; SaveSettings(); ApplyChrome(); Invalidate(); };
-            Control[] items = new Control[4 + themeIds.Length];
+            Button phoneLight = Btn("Phone light");
+            Button phoneDark = Btn("Phone dark");
+            Button phoneSystem = Btn("Phone system");
+            phoneLight.Click += delegate { Act("mode", "LIGHT"); };
+            phoneDark.Click += delegate { Act("mode", "DARK"); };
+            phoneSystem.Click += delegate { Act("mode", "SYSTEM"); };
+            Control[] items = new Control[7 + themeIds.Length];
             items[2] = light;
             items[3] = night;
+            items[4] = phoneLight;
+            items[5] = phoneDark;
+            items[6] = phoneSystem;
             for (int i = 0; i < themeIds.Length; i++)
             {
                 Button button = Btn(themeLabels[i]);
@@ -288,10 +299,10 @@ namespace TrackWindows
                 button.Tag = id;
                 button.Click += delegate { Act("theme", id); };
                 phoneThemeButtons.Add(button);
-                items[4 + i] = button;
+                items[7 + i] = button;
             }
-            Label title = Title("Themes");
-            Label hint = Hint("Light and dark change this dock. The colors below change the phone.");
+            Label title = Title("Appearance");
+            Label hint = Hint("Light and dark change this window. Phone light, dark, and system change the app on the phone. The colors below are the phone accent.");
             items[0] = title;
             items[1] = hint;
             themePage.Resize += delegate { Stack(themePage, items); };
@@ -692,6 +703,14 @@ namespace TrackWindows
             }
             object name;
             if (map.TryGetValue("name", out name) && name != null) homeTitle.Text = name.ToString();
+            object cost;
+            object limit;
+            string costText = map.TryGetValue("cost", out cost) && cost != null ? cost.ToString() : "";
+            string limitText = map.TryGetValue("limit", out limit) && limit != null ? limit.ToString() : "";
+            if (costText.Length > 0)
+                activityLine.Text = "Cost this month " + costText + (limitText.Length > 0 ? " of " + limitText : "");
+            else
+                activityLine.Text = "Cost appears here after expenses are opened on the phone.";
             object note;
             if (map.TryGetValue("note", out note) && note != null && note.ToString().Length > 0) SetNotes(note.ToString());
             FillAccounts(map);
@@ -747,9 +766,10 @@ namespace TrackWindows
                 string id = Field(row, "id");
                 string name = Field(row, "name");
                 string size = Field(row, "size");
+                string folder = Field(row, "folder");
                 ids.Add(id);
                 names.Add(name);
-                sig.Append(id).Append('|').Append(name).Append('|').Append(size).Append('\n');
+                sig.Append(id).Append('|').Append(folder).Append('|').Append(name).Append('|').Append(size).Append('\n');
             }
             string text = sig.ToString();
             if (text == fileSig) return;
@@ -764,8 +784,14 @@ namespace TrackWindows
             {
                 string size = "";
                 Dictionary<string, object> row = rows[i] as Dictionary<string, object>;
-                if (row != null) size = Field(row, "size");
-                fileList.Items.Add(size.Length > 0 ? names[i] + "   " + size : names[i]);
+                string folder = "";
+                if (row != null)
+                {
+                    size = Field(row, "size");
+                    folder = Field(row, "folder");
+                }
+                string shown = folder.Length > 0 ? folder + " / " + names[i] : names[i];
+                fileList.Items.Add(size.Length > 0 ? shown + "   " + size : shown);
             }
             fileList.EndUpdate();
         }
@@ -956,12 +982,12 @@ namespace TrackWindows
                 int radius = big ? 26 : 20;
                 if (big || on)
                 {
-                    Color bubble = on && dark ? Color.White : (dark ? Color.FromArgb(38, 38, 46) : Color.White);
+                    Color bubble = on ? Color.FromArgb(198, 242, 91) : (dark ? Color.FromArgb(29, 29, 42) : Color.White);
                     if (!dark && !on) bubble = Color.FromArgb(236, 242, 255);
                     using (SolidBrush brush = new SolidBrush(bubble))
                         g.FillEllipse(brush, spots[i].X - radius, spots[i].Y - radius, radius * 2, radius * 2);
                 }
-                Color ink = (on && dark) ? Color.Black : Ink(false);
+                Color ink = on ? Color.Black : Ink(false);
                 if (i == 0) DrawStar(g, spots[i], 9, ink);
                 else if (i == 1) DrawPlus(g, spots[i], ink);
                 else if (i == 2) DrawBars(g, spots[i], ink);
