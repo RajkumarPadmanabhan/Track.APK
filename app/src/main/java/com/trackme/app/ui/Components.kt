@@ -592,6 +592,7 @@ fun HomeNav(
     onProfile: () -> Unit,
     onScan: () -> Unit,
     onExpenses: () -> Unit,
+    onShare: () -> Unit,
 ) {
     val bar = MaterialTheme.colorScheme.surface
     val label = MaterialTheme.colorScheme.onSurface
@@ -617,6 +618,7 @@ fun HomeNav(
                     detectTapGestures(
                         onTap = { onScan() },
                         onDoubleTap = { onExpenses() },
+                        onLongPress = { onShare() },
                     )
                 },
             contentAlignment = Alignment.Center,

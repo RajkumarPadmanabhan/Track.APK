@@ -236,6 +236,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
                     onProfile = { vm.screen = Screen.PROFILE },
                     onScan = { vm.openAdd() },
                     onExpenses = { vm.openExpenses() },
+                    onShare = { vm.openShare() },
                 )
             }
         },
@@ -279,6 +280,7 @@ private fun MainShell(vm: TrackViewModel, sharedText: String?) {
     }
 
     if (vm.showAdd) AddTagSheet(vm)
+    if (vm.showShare) ShareSheet(vm)
     if (!vm.walkthroughDone && vm.screen == Screen.HOME && !vm.showAdd) {
         FirstWalkthrough(onDone = { vm.finishWalkthrough() })
     }

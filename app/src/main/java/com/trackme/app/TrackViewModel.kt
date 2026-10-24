@@ -52,6 +52,8 @@ import com.trackme.app.data.FilePreviewer
 import com.trackme.app.data.FileStoreException
 import com.trackme.app.data.NewsTopics
 import com.trackme.app.data.UserNewsPost
+import com.trackme.app.data.ShareRecord
+import com.trackme.app.data.ShareRelay
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -155,6 +157,18 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    var showShare by mutableStateOf(false)
+    var shareBusy by mutableStateOf(false)
+        private set
+    var shareStatus by mutableStateOf<String?>(null)
+        private set
+    var shareHistory by mutableStateOf<List<ShareRecord>>(emptyList())
+        private set
+    var shareMessage by mutableStateOf<String?>(null)
+        private set
+    var shareDraft by mutableStateOf("")
+    var shareCode by mutableStateOf("")
 
     fun activityShown(part: String): Boolean = part !in hiddenActivity
 
@@ -1533,5 +1547,180 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
             SortMode.SIZE -> list.sortedByDescending { it.sizeKb }
             SortMode.NAME -> list.sortedBy { it.name.lowercase() }
         }
+    }
+
+    fun openShare() {
+        showShare = true
+        val email = session?.email ?: return
+        shareHistory = loadShareLog(email)
+        viewModelScope.launch {
+            val remote = withContext(Dispatchers.IO) {
+                runCatching { ShareRelay.history(email) }.getOrNull()
+            } ?: return@launch
+            val merged = (remote + shareHistory).distinctBy { it.code }.sortedByDescending { it.at }
+            shareHistory = merged
+            saveShareLog(email, merged)
+        }
+    }
+
+    fun closeShare() {
+        showShare = false
+    }
+
+    fun consumeShareMessage() {
+        shareMessage = null
+    }
+
+    fun shareProfile() {
+        val me = session ?: return
+        sendShare("profile", me.name.ifBlank { me.email }, "text/plain", null, me.email)
+    }
+
+    fun shareFile(file: UploadedFile) {
+        if (file.originalSize > ShareRelay.MAX_BYTES) {
+            shareStatus = "That file is over 4 MB, so it can't be shared this way."
+            return
+        }
+        val me = session ?: return
+        if (shareBusy) return
+        shareBusy = true
+        shareStatus = null
+        viewModelScope.launch {
+            try {
+                val bytes = withContext(Dispatchers.IO) {
+                    UploadedFileStore.readOriginal(getApplication(), file)
+                }
+                val code = withContext(Dispatchers.IO) {
+                    ShareRelay.create(me.email, me.name, "file", file.displayName, file.mimeType, bytes, null)
+                }
+                finishSend("file", file.displayName, code, me.email)
+            } catch (e: Exception) {
+                shareStatus = e.message ?: "Couldn't share that file."
+            } finally {
+                shareBusy = false
+            }
+        }
+    }
+
+    fun shareNote() {
+        val text = shareDraft.trim()
+        if (text.isBlank()) {
+            shareStatus = "Type something to share."
+            return
+        }
+        if (shareBusy) return
+        shareDraft = ""
+        sendShare("note", text.take(40), "text/plain", null, text)
+    }
+
+    fun claimShare() {
+        val me = session ?: return
+        if (shareBusy) return
+        shareBusy = true
+        shareStatus = null
+        viewModelScope.launch {
+            try {
+                val claimed = withContext(Dispatchers.IO) {
+                    ShareRelay.claim(shareCode, me.email, me.name)
+                }
+                when {
+                    claimed.kind == "file" && claimed.bytes != null -> {
+                        val record = withContext(Dispatchers.IO) {
+                            UploadedFileStore.saveBytes(getApplication(), claimed.name, claimed.mime, claimed.bytes)
+                        }
+                        uploadedFiles = listOf(record) + uploadedFiles.filter { it.id != record.id }
+                        UploadedFileStore.save(prefs, me.email, uploadedFiles)
+                        refreshBadges()
+                        shareStatus = "Saved ${claimed.name} in Files."
+                    }
+                    claimed.kind == "file" -> shareStatus = "You already received ${claimed.name}."
+                    claimed.kind == "profile" -> {
+                        val who = claimed.fromName.ifBlank { claimed.name }
+                        shareStatus = "$who · ${claimed.fromEmail}"
+                    }
+                    else -> shareStatus = claimed.text.ifBlank { claimed.name }
+                }
+                rememberShare(
+                    ShareRecord(
+                        claimed.code,
+                        claimed.kind,
+                        claimed.name,
+                        claimed.fromEmail,
+                        me.email,
+                        claimed.createdAt,
+                    ),
+                )
+                shareCode = ""
+            } catch (e: Exception) {
+                shareStatus = e.message ?: "Couldn't open that code."
+            } finally {
+                shareBusy = false
+            }
+        }
+    }
+
+    private fun sendShare(kind: String, name: String, mime: String, bytes: ByteArray?, text: String?) {
+        val me = session ?: return
+        if (shareBusy) return
+        shareBusy = true
+        shareStatus = null
+        viewModelScope.launch {
+            try {
+                val code = withContext(Dispatchers.IO) {
+                    ShareRelay.create(me.email, me.name, kind, name, mime, bytes, text)
+                }
+                finishSend(kind, name, code, me.email)
+            } catch (e: Exception) {
+                shareStatus = e.message ?: "Couldn't share."
+            } finally {
+                shareBusy = false
+            }
+        }
+    }
+
+    private fun finishSend(kind: String, name: String, code: String, fromEmail: String) {
+        rememberShare(ShareRecord(code, kind, name, fromEmail, "", System.currentTimeMillis()))
+        shareMessage = ShareRelay.message(kind, name, code)
+        shareStatus = "Code $code is ready to send."
+    }
+
+    private fun rememberShare(row: ShareRecord) {
+        val email = session?.email ?: return
+        val next = (listOf(row) + shareHistory.filter { it.code != row.code }).sortedByDescending { it.at }
+        shareHistory = next
+        saveShareLog(email, next)
+    }
+
+    private fun loadShareLog(email: String): List<ShareRecord> {
+        val raw = prefs.getString("share_log_$email", null) ?: return emptyList()
+        return runCatching {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { i ->
+                val o = arr.getJSONObject(i)
+                ShareRecord(
+                    code = o.getString("code"),
+                    kind = o.optString("kind"),
+                    name = o.optString("name"),
+                    fromEmail = o.optString("fromEmail"),
+                    toEmail = o.optString("toEmail"),
+                    at = o.optLong("at"),
+                )
+            }
+        }.getOrDefault(emptyList())
+    }
+
+    private fun saveShareLog(email: String, rows: List<ShareRecord>) {
+        val arr = JSONArray()
+        rows.take(40).forEach { row ->
+            arr.put(JSONObject().apply {
+                put("code", row.code)
+                put("kind", row.kind)
+                put("name", row.name)
+                put("fromEmail", row.fromEmail)
+                put("toEmail", row.toEmail)
+                put("at", row.at)
+            })
+        }
+        prefs.edit().putString("share_log_$email", arr.toString()).apply()
     }
 }
