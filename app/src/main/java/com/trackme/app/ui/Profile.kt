@@ -704,10 +704,6 @@ fun ProfileScreen(vm: TrackViewModel) {
             title = { Text("Other", fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OtherAction("Share", "Send your profile, a file, or a note") {
-                        showOther = false
-                        vm.openShare()
-                    }
                     OtherAction("Linked devices", "Open this app on a computer") {
                         showOther = false
                         vm.screen = Screen.LINKED_DEVICES

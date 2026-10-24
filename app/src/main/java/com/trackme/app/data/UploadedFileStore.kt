@@ -38,12 +38,6 @@ fun sha256Hex(file: File): String {
     return digest.digest().joinToString("") { "%02x".format(it) }
 }
 
-fun sha256Hex(bytes: ByteArray): String {
-    val digest = MessageDigest.getInstance("SHA-256")
-    digest.update(bytes)
-    return digest.digest().joinToString("") { "%02x".format(it) }
-}
-
 /**
  * Saved PDFs live in the app's private folder under a generated name.
  * They are stored compressed, and the original bytes are checked by hash
@@ -182,42 +176,6 @@ object UploadedFileStore {
         val base = raw.substringAfterLast('/').substringAfterLast('\\').trim()
         val clean = base.filter { it.code in 32..126 && it !in "\\/:*?\"<>|" }.take(80)
         return clean.ifBlank { "file" }
-    }
-
-    /** Stores bytes the same way as a picked file: compressed, private, and not executed. */
-    fun saveBytes(context: Context, displayName: String, mimeType: String, bytes: ByteArray): UploadedFile {
-        if (bytes.isEmpty()) throw FileStoreException("That file is empty.")
-        if (bytes.size > MAX_BYTES) throw FileStoreException("That file is over $MAX_LABEL.")
-        val display = sanitizeName(displayName)
-        val ext = display.substringAfterLast('.', "")
-            .lowercase(Locale.US)
-            .filter { it.isLetterOrDigit() }
-            .take(8)
-        val id = UUID.randomUUID().toString()
-        val hash = sha256Hex(bytes)
-        val storedName = "$id.bin.gz"
-        val stored = storedFile(context, storedName)
-        GZIPOutputStream(FileOutputStream(stored)).use { it.write(bytes) }
-        stored.setExecutable(false, false)
-        return UploadedFile(
-            id = id,
-            displayName = display,
-            storedName = storedName,
-            originalSize = bytes.size.toLong(),
-            storedSize = stored.length(),
-            pageCount = 0,
-            sha256 = hash,
-            uploadedAt = System.currentTimeMillis(),
-            portfolioName = null,
-            mimeType = mimeType.ifBlank { "application/octet-stream" },
-            extension = ext,
-        )
-    }
-
-    fun readOriginal(context: Context, file: UploadedFile): ByteArray {
-        val stored = storedFile(context, file.storedName)
-        if (!stored.exists()) throw FileStoreException("That file is no longer on this phone.")
-        return GZIPInputStream(FileInputStream(stored)).use { it.readBytes() }
     }
 
     fun deleteStored(context: Context, file: UploadedFile) {
