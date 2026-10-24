@@ -87,18 +87,6 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
     var verified by mutableStateOf(false)
         private set
 
-    init {
-        loadBadgeState()
-        refreshBadges()
-        viewModelScope.launch {
-            fillEmailPhoto()
-            while (true) {
-                kotlinx.coroutines.delay(1000L)
-                liveTicker = System.currentTimeMillis()
-            }
-        }
-    }
-
     var screen by mutableStateOf(Screen.HOME)
     var showAdd by mutableStateOf(false)
     var detailId by mutableStateOf<String?>(null)
@@ -155,6 +143,18 @@ class TrackViewModel(app: Application) : AndroidViewModel(app) {
         private set
     var fileFolders by mutableStateOf<List<String>>(emptyList())
         private set
+
+    init {
+        loadBadgeState()
+        refreshBadges()
+        viewModelScope.launch {
+            fillEmailPhoto()
+            while (true) {
+                kotlinx.coroutines.delay(1000L)
+                liveTicker = System.currentTimeMillis()
+            }
+        }
+    }
 
     fun activityShown(part: String): Boolean = part !in hiddenActivity
 

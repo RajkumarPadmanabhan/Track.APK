@@ -529,7 +529,7 @@ body:not(.page-open){overflow:hidden}
       <div class="item"><b>Appearance</b><span>Light, dark, or system, plus an accent color.</span></div>
       <div class="item"><b>Verified</b><span>The blue seal appears after the promo code.</span></div>
     </div>
-    <a class="btn" href="https://github.com/RajkumarPadmanabhan/Track.APK/releases/download/v1.3.14/TrackMe-v1.3.14.apk">Download APK</a>
+    <a class="btn" href="https://github.com/RajkumarPadmanabhan/Track.APK/releases/download/v1.3.16/TrackMe-v1.3.16.apk">Download APK</a>
   </section>
 </main>
 <script>
